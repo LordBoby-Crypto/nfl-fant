@@ -30,6 +30,7 @@ export interface PlayerIntelligence {
   injuryStatus: string;
   injuryDetail: string;
   practiceStatus: string;
+  byeWeek: number | null;
   news: PlayerNewsItem[];
 }
 
@@ -406,6 +407,9 @@ export function buildPlayerBoard(
         "practice",
         "practice_participation",
       ]),
+      byeWeek:
+        asNumber(base, ["bye_week", "bye", "player_bye_week"]) ??
+        asNumber(metadata, ["bye_week", "bye", "player_bye_week"]),
       news,
     } satisfies PlayerIntelligence;
   }).sort((left, right) => {

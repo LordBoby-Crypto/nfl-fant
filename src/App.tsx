@@ -25,9 +25,11 @@ import {
   Zap,
 } from "lucide-react";
 import { useLeagueSnapshot } from "./hooks/useLeagueSnapshot";
+import { useDraftPicks } from "./hooks/useDraftPicks";
 import { useIntelligenceStatus } from "./hooks/useIntelligenceStatus";
 import { PlayerIntelligencePage } from "./features/player-intelligence/PlayerIntelligencePage";
 import { useWarRoom } from "./features/player-intelligence/useWarRoom";
+import { LiveDraftRoom } from "./features/live-draft/LiveDraftRoom";
 import {
   getDraftPosition,
   getUserRoster,
@@ -310,85 +312,6 @@ function Overview({
   );
 }
 
-function DraftRoom({
-  snapshot,
-  refreshing,
-  onRefresh,
-}: {
-  snapshot: LeagueSnapshot;
-  refreshing: boolean;
-  onRefresh: () => void;
-}) {
-  const position = getDraftPosition(snapshot);
-  const roster = getUserRoster(snapshot);
-  const draft = snapshot.draft;
-
-  return (
-    <main className="workspace-page">
-      <header className="page-heading">
-        <div>
-          <h1>Draft room</h1>
-          <p>Live status for your Sleeper draft and roster.</p>
-        </div>
-        <button
-          className="button outline"
-          disabled={refreshing}
-          onClick={onRefresh}
-        >
-          <RefreshCw className={refreshing ? "spin" : ""} size={18} />
-          Refresh
-        </button>
-      </header>
-
-      <section className="draft-hero">
-        <div>
-          <small>Current state</small>
-          <h2>
-            {draft.status === "pre_draft"
-              ? "Waiting for the commissioner"
-              : draft.status === "drafting"
-                ? "The draft is live"
-                : "Draft complete"}
-          </h2>
-          <p>
-            {position
-              ? `KingBoby owns draft position ${position}.`
-              : "Sleeper has not assigned the draft order or start time yet."}
-          </p>
-        </div>
-        <div className="draft-meta">
-          <span><small>Roster</small><strong>#{roster?.roster_id ?? "—"}</strong></span>
-          <span><small>Format</small><strong className="capitalize">{draft.type}</strong></span>
-          <span><small>Rounds</small><strong>{draft.settings.rounds}</strong></span>
-          <span><small>Timer</small><strong>{Math.round(draft.settings.pick_timer / 60)}m</strong></span>
-        </div>
-      </section>
-
-      <section className="roster-build">
-        <h2>Roster construction</h2>
-        <p>The live board will activate automatically when Sleeper begins the draft.</p>
-        <div className="slot-list">
-          {[
-            ["QB", draft.settings.slots_qb],
-            ["RB", draft.settings.slots_rb],
-            ["WR", draft.settings.slots_wr],
-            ["TE", draft.settings.slots_te],
-            ["FLEX", draft.settings.slots_flex],
-            ["K", draft.settings.slots_k],
-            ["DEF", draft.settings.slots_def],
-            ["BENCH", draft.settings.slots_bn],
-          ].map(([label, count]) => (
-            <span key={label}>
-              <strong>{count}</strong>
-              <small>{label}</small>
-            </span>
-          ))}
-        </div>
-      </section>
-    </main>
-  );
-}
-
 function StatusPage({
   view,
   snapshot,
@@ -470,7 +393,14 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { data, error, loading, refreshing, refresh } = useLeagueSnapshot();
   const intelligence = useIntelligenceStatus();
-  const warRoom = useWarRoom(view === "Rankings" || view === "Players");
+  const warRoom = useWarRoom(
+    view === "Draft Room" || view === "Rankings" || view === "Players",
+  );
+  const draftPicks = useDraftPicks(
+    data?.draft.draft_id ?? null,
+    data?.draft.status ?? null,
+    view === "Draft Room",
+  );
 
   const title = useMemo(() => {
     if (!data) return "THE League";
@@ -569,10 +499,15 @@ function App() {
             intelligence={intelligence}
           />
         ) : view === "Draft Room" ? (
-          <DraftRoom
+          <LiveDraftRoom
             snapshot={data}
+            draftPicks={draftPicks}
             refreshing={refreshing}
-            onRefresh={() => void refresh()}
+            onRefresh={() => {
+              void refresh();
+              void draftPicks.refresh();
+            }}
+            warRoom={warRoom}
           />
         ) : view === "Rankings" || view === "Players" ? (
           <PlayerIntelligencePage

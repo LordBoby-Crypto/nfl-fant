@@ -75,8 +75,9 @@ export function useLeagueSnapshot() {
   }, []);
 
   useEffect(() => {
-    if (!state.data || state.data.draft.status !== "drafting") return;
-    const timer = window.setInterval(() => void refresh(true), 15_000);
+    if (!state.data) return;
+    const interval = state.data.draft.status === "drafting" ? 10_000 : 60_000;
+    const timer = window.setInterval(() => void refresh(true), interval);
     return () => window.clearInterval(timer);
   }, [refresh, state.data]);
 

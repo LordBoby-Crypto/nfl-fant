@@ -4,6 +4,7 @@ import type {
   LeagueSnapshot,
   LeagueUser,
   Roster,
+  SleeperDraftPick,
 } from "../types";
 
 export const LEAGUE_ID = "1387560115116208128";
@@ -43,6 +44,13 @@ export async function getLeagueSnapshot(
     rosters,
     fetchedAt: Date.now(),
   };
+}
+
+export async function getDraftPicks(
+  draftId: string,
+  signal?: AbortSignal,
+): Promise<SleeperDraftPick[]> {
+  return getJson<SleeperDraftPick[]>(`/draft/${draftId}/picks`, signal);
 }
 
 export function getUserRoster(snapshot: LeagueSnapshot): Roster | undefined {
