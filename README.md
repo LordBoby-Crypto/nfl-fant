@@ -32,6 +32,21 @@ Milestone 3 adds:
 - Position-specific projection aggregation for QB, RB, WR, TE, K, and DST
 - Responsive table and player-detail layouts for desktop and phone
 
+Milestone 4 adds:
+
+- Five-second Sleeper pick synchronization while the draft is live
+- Automatic removal of drafted players by Sleeper ID and normalized name
+- Current picker, next KingBoby selection, and picks-until-turn tracking for
+  the 14-team snake draft
+- All-team roster construction and unfilled positional needs
+- Five recommendations recalculated after every pick using value over
+  replacement, scarcity, roster need, ADP, injury risk, and bye-week overlap
+- Persistent watchlist, ordered queue, target, sleeper, and avoid controls
+- A compact phone command view with recommendations, available players, and
+  recent picks together
+- A full pre-draft simulator for any practice slot while Sleeper's actual order
+  remains unassigned
+
 ## Local development
 
 ```bash
@@ -44,6 +59,16 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## Tests
+
+```bash
+npm test
+```
+
+The focused draft-engine suite covers snake order, simulator slot swaps, live
+turn calculations, drafted-player removal, recommendation controls, and
+simulator advancement.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 

@@ -50,6 +50,24 @@ export interface Draft {
   };
 }
 
+export interface SleeperDraftPick {
+  player_id: string;
+  picked_by: string;
+  roster_id: number | string;
+  round: number;
+  draft_slot: number;
+  pick_no: number;
+  is_keeper: boolean | null;
+  metadata: {
+    first_name?: string;
+    last_name?: string;
+    team?: string;
+    position?: string;
+    injury_status?: string;
+    [key: string]: string | undefined;
+  };
+}
+
 export interface LeagueUser {
   user_id: string;
   display_name: string;
