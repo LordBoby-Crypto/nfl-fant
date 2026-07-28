@@ -4,10 +4,13 @@ import {
   CalendarClock,
   Check,
   ChevronDown,
+  CircleAlert,
   ClipboardList,
   Clock3,
+  Database,
   ExternalLink,
   LayoutDashboard,
+  LockKeyhole,
   Menu,
   RefreshCw,
   Search,
@@ -22,12 +25,14 @@ import {
   Zap,
 } from "lucide-react";
 import { useLeagueSnapshot } from "./hooks/useLeagueSnapshot";
+import { useIntelligenceStatus } from "./hooks/useIntelligenceStatus";
 import {
   getDraftPosition,
   getUserRoster,
   USERNAME,
 } from "./services/sleeper";
 import type { LeagueSnapshot } from "./types";
+import type { IntelligenceStatus } from "./services/intelligence";
 
 type View =
   | "Overview"
@@ -90,11 +95,17 @@ function Overview({
   refreshing,
   onRefresh,
   onOpenDraft,
+  intelligence,
 }: {
   snapshot: LeagueSnapshot;
   refreshing: boolean;
   onRefresh: () => void;
   onOpenDraft: () => void;
+  intelligence: {
+    data: IntelligenceStatus | null;
+    error: string | null;
+    linked: boolean;
+  };
 }) {
   const position = getDraftPosition(snapshot);
   const { draft, league } = snapshot;
@@ -217,6 +228,56 @@ function Overview({
           </div>
         </section>
 
+        <section className="section-block">
+          <h2>Player intelligence</h2>
+          <div className="intelligence-rail">
+            <div>
+              <Database />
+              <span>
+                <strong>FantasyPros selected</strong>
+                <small>Rankings, ADP, projections, injuries and news</small>
+              </span>
+              <StatusIcon complete />
+            </div>
+            <div>
+              <LockKeyhole />
+              <span>
+                <strong>Protected server access</strong>
+                <small>
+                  {intelligence.linked
+                    ? intelligence.error
+                      ? "Backend link needs attention"
+                      : "API key stays outside the browser"
+                    : "Backend deployment URL is not linked yet"}
+                </small>
+              </span>
+              <StatusIcon
+                complete={Boolean(intelligence.data)}
+                pending={!intelligence.data}
+              />
+            </div>
+            <div>
+              <CircleAlert />
+              <span>
+                <strong>
+                  {intelligence.data?.configured
+                    ? "Production data configured"
+                    : "FantasyPros key still required"}
+                </strong>
+                <small>
+                  {intelligence.data?.configured
+                    ? "Private data routes are ready"
+                    : "No subscription has been purchased or assumed"}
+                </small>
+              </span>
+              <StatusIcon
+                complete={Boolean(intelligence.data?.configured)}
+                pending={!intelligence.data?.configured}
+              />
+            </div>
+          </div>
+        </section>
+
         <section className="section-block strategy">
           <h2>Strategy snapshot</h2>
           <div className="strategy-row">
@@ -329,9 +390,15 @@ function DraftRoom({
 function StatusPage({
   view,
   snapshot,
+  intelligence,
 }: {
   view: Exclude<View, "Overview" | "Draft Room">;
   snapshot: LeagueSnapshot;
+  intelligence: {
+    data: IntelligenceStatus | null;
+    error: string | null;
+    linked: boolean;
+  };
 }) {
   const roster = getUserRoster(snapshot);
 
@@ -341,11 +408,18 @@ function StatusPage({
   > = {
     Rankings: {
       icon: Trophy,
-      title: "Rankings source is next",
+      title: intelligence.data?.configured
+        ? "FantasyPros is securely connected"
+        : "FantasyPros is selected and the backend is ready",
       description:
-        "A trustworthy projections and ADP source must be connected before this board can make honest recommendations.",
+        intelligence.data?.configured
+          ? "The protected data layer is ready for the searchable 2026 PPR board."
+          : "The production API key is the remaining requirement before live 2026 rankings can appear.",
       detail:
-        "Sleeper supplies the league and player pool, but it does not supply strong independent projections.",
+        intelligence.error ??
+        (intelligence.linked
+          ? "Rankings · ADP · projections · injuries · news"
+          : "The public GitHub Pages build still needs the backend URL."),
     },
     Players: {
       icon: Search,
@@ -421,6 +495,7 @@ function App() {
   const [view, setView] = useState<View>("Overview");
   const [menuOpen, setMenuOpen] = useState(false);
   const { data, error, loading, refreshing, refresh } = useLeagueSnapshot();
+  const intelligence = useIntelligenceStatus();
 
   const title = useMemo(() => {
     if (!data) return "THE League";
@@ -516,6 +591,7 @@ function App() {
             refreshing={refreshing}
             onRefresh={() => void refresh()}
             onOpenDraft={() => setView("Draft Room")}
+            intelligence={intelligence}
           />
         ) : view === "Draft Room" ? (
           <DraftRoom
@@ -524,7 +600,11 @@ function App() {
             onRefresh={() => void refresh()}
           />
         ) : (
-          <StatusPage view={view} snapshot={data} />
+          <StatusPage
+            view={view}
+            snapshot={data}
+            intelligence={intelligence}
+          />
         )}
       </div>
 

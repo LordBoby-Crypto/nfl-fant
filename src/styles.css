@@ -466,6 +466,52 @@ button:focus-visible {
   padding-bottom: 20px;
 }
 
+.intelligence-rail {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  overflow: hidden;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.intelligence-rail > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  min-height: 96px;
+  padding: 17px;
+  background: #081625;
+}
+
+.intelligence-rail > div > svg {
+  width: 25px;
+  height: 25px;
+  color: var(--accent);
+  stroke-width: 1.7;
+}
+
+.intelligence-rail > div > span {
+  display: grid;
+  gap: 5px;
+}
+
+.intelligence-rail strong {
+  font-size: 14px;
+}
+
+.intelligence-rail small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.intelligence-rail .status-icon {
+  width: 34px;
+  height: 34px;
+}
+
 .strategy-row {
   position: relative;
   display: flex;
@@ -976,6 +1022,10 @@ button:focus-visible {
   .strategy-row {
     align-items: flex-start;
     padding: 20px;
+  }
+
+  .intelligence-rail {
+    grid-template-columns: 1fr;
   }
 
   .strategy-row strong {
