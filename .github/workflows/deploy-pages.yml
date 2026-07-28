@@ -29,7 +29,7 @@ jobs:
         run: npm ci
       - name: Build
         env:
-          VITE_INTELLIGENCE_API_URL: ${{ vars.INTELLIGENCE_API_URL }}
+          VITE_INTELLIGENCE_API_URL: https://nfl-fant-api.vercel.app
         run: npm run build
       - name: Configure Pages
         uses: actions/configure-pages@v5
