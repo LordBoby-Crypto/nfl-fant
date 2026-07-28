@@ -18,7 +18,7 @@ const DATASETS = {
   },
   injuries: {
     path: "/nfl/injuries",
-    params: { season: SEASON, week: "draft" },
+    params: { season: SEASON },
     ttl: 15 * 60 * 1000,
   },
   news: {
