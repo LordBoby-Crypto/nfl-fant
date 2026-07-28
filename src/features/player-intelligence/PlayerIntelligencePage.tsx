@@ -445,7 +445,7 @@ export function PlayerIntelligencePage({
         </div>
       ) : null}
 
-      {warRoom.board ? (
+      {warRoom.board?.players.length ? (
         <>
           <section className="board-summary" aria-label="Ranking summary">
             <span><strong>{warRoom.board.players.length}</strong><small>ranked players</small></span>
@@ -458,8 +458,9 @@ export function PlayerIntelligencePage({
             <div className="partial-data-note">
               <CircleAlert />
               <span>
-                Some provider feeds are temporarily unavailable. Available live
-                data is shown; missing fields use —.
+                Some provider data is temporarily unavailable:{" "}
+                {Object.keys(warRoom.board.datasetErrors).join(", ")}. Available
+                live data is shown; missing fields use —.
               </span>
             </div>
           ) : null}

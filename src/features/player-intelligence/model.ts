@@ -81,8 +81,33 @@ function asNumber(record: JsonRecord, keys: string[]) {
   const value = valueAt(record, keys);
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
-    const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+    const cleaned = value.replace(/[^0-9.-]/g, "");
+    if (!/[0-9]/.test(cleaned)) return null;
+    const parsed = Number(cleaned);
     return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function firstNestedNumber(value: unknown, keys: string[], depth = 0): number | null {
+  if (depth > 6) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = firstNestedNumber(item, keys, depth + 1);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  if (!isRecord(value)) return null;
+
+  const direct = asNumber(value, keys);
+  if (direct !== null) return direct;
+
+  for (const nested of Object.values(value)) {
+    if (Array.isArray(nested) || isRecord(nested)) {
+      const found = firstNestedNumber(nested, keys, depth + 1);
+      if (found !== null) return found;
+    }
   }
   return null;
 }
@@ -293,13 +318,29 @@ export function buildPlayerBoard(
     "players",
     "results",
   ]);
+  const datasetErrors = { ...failures };
+  for (const response of responses) {
+    if (!isRecord(response.data) || !Array.isArray(response.data.unavailable)) {
+      continue;
+    }
+    const unavailable = response.data.unavailable.filter(
+      (value): value is string => typeof value === "string",
+    );
+    if (unavailable.length) {
+      datasetErrors[response.dataset] =
+        `${response.dataset} unavailable for ${unavailable.join(", ")}.`;
+    }
+  }
 
   const metadataIndex = indexRecords(metadataRecords);
   const projectionIndex = indexRecords(projectionRecords);
   const injuryIndex = indexRecords(injuryRecords);
   const newsIndex = indexRecords(newsRecords);
 
-  const bases = rankingRecords.length ? rankingRecords : metadataRecords;
+  // The metadata endpoint is a historical catalog containing thousands of
+  // retired and non-fantasy players. It must never masquerade as a rankings
+  // board when the consensus feed is unavailable.
+  const bases = rankingRecords;
   const uniqueBases = new Map<string, JsonRecord>();
   for (const base of bases) {
     const identity = recordIdentity(base);
@@ -373,12 +414,12 @@ export function buildPlayerBoard(
     return leftRank - rightRank || left.name.localeCompare(right.name);
   });
 
-  const rankingData = isRecord(rankingResponse?.data)
-    ? rankingResponse.data
-    : null;
-  const totalExperts = rankingData
-    ? asNumber(rankingData, ["total_experts", "totalExperts", "experts"])
-    : null;
+  const totalExperts = firstNestedNumber(rankingResponse?.data, [
+    "total_experts",
+    "totalExperts",
+    "expert_count",
+    "expertCount",
+  ]);
 
   return {
     players,
@@ -387,6 +428,6 @@ export function buildPlayerBoard(
       responses.find((response) => response.attribution)?.attribution ??
       "Data obtained from FantasyPros.",
     totalExperts,
-    datasetErrors: failures,
+    datasetErrors,
   };
 }

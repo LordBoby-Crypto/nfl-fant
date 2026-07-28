@@ -8,7 +8,7 @@ const SEASON = "2026";
 const DATASETS = {
   rankings: {
     path: `/nfl/${SEASON}/consensus-rankings`,
-    params: { scoring: "PPR", position: "ALL" },
+    params: { scoring: "PPR" },
     ttl: 6 * 60 * 60 * 1000,
   },
   projections: {
@@ -37,7 +37,17 @@ type Dataset = keyof typeof DATASETS;
 type CacheEntry = { expiresAt: number; value: unknown };
 
 const cache = new Map<Dataset, CacheEntry>();
-const PROJECTION_POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"] as const;
+const FANTASY_POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"] as const;
+
+class FantasyProsError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "FantasyProsError";
+  }
+}
 
 function requestedDataset(request: VercelRequest): Dataset | null {
   const value = Array.isArray(request.query.dataset)
@@ -56,18 +66,72 @@ async function fetchFantasyPros(
 
   const search = new URLSearchParams(params);
   const url = `${API_ROOT}${path}${search.size ? `?${search}` : ""}`;
-  const upstream = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "x-api-key": apiKey,
-    },
-  });
+  let upstream: Response | null = null;
 
-  if (!upstream.ok) {
-    throw new Error(`FantasyPros returned ${upstream.status}.`);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    upstream = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "x-api-key": apiKey,
+      },
+    });
+
+    if (upstream.status !== 429 || attempt === 1) break;
+    const retryAfter = Number(upstream.headers.get("retry-after"));
+    await new Promise((resolve) =>
+      setTimeout(resolve, Number.isFinite(retryAfter) ? retryAfter * 1000 : 1000),
+    );
+  }
+
+  if (!upstream?.ok) {
+    const status = upstream?.status ?? 502;
+    throw new FantasyProsError(`FantasyPros returned ${status}.`, status);
   }
 
   return upstream.json() as Promise<unknown>;
+}
+
+async function fetchPositionDataset(
+  dataset: "rankings" | "projections",
+  path: string,
+  params: Record<string, string>,
+) {
+  const results = await Promise.allSettled(
+    FANTASY_POSITIONS.map(async (position) => ({
+      position,
+      value: await fetchFantasyPros(path, {
+        ...params,
+        position,
+      }),
+    })),
+  );
+  const positions: Record<string, unknown> = {};
+  const unavailable: string[] = [];
+
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      positions[result.value.position] = result.value.value;
+    } else {
+      unavailable.push(FANTASY_POSITIONS[index]);
+      const reason = result.reason;
+      console.warn(
+        JSON.stringify({
+          level: "warning",
+          message: "FantasyPros position request failed",
+          dataset,
+          position: FANTASY_POSITIONS[index],
+          status: reason instanceof FantasyProsError ? reason.status : null,
+          error: reason instanceof Error ? reason.message : String(reason),
+        }),
+      );
+    }
+  });
+
+  if (!Object.keys(positions).length) {
+    throw new Error(`FantasyPros ${dataset} are temporarily unavailable.`);
+  }
+
+  return { positions, unavailable };
 }
 
 async function fetchDataset(dataset: Dataset) {
@@ -77,31 +141,12 @@ async function fetchDataset(dataset: Dataset) {
   const definition = DATASETS[dataset];
   let value: unknown;
 
-  if (dataset === "projections") {
-    const results = await Promise.allSettled(
-      PROJECTION_POSITIONS.map(async (position) => ({
-        position,
-        value: await fetchFantasyPros(definition.path, {
-          ...definition.params,
-          position,
-        }),
-      })),
+  if (dataset === "rankings" || dataset === "projections") {
+    value = await fetchPositionDataset(
+      dataset,
+      definition.path,
+      definition.params as Record<string, string>,
     );
-    const positions: Record<string, unknown> = {};
-    const unavailable: string[] = [];
-
-    results.forEach((result, index) => {
-      if (result.status === "fulfilled") {
-        positions[result.value.position] = result.value.value;
-      } else {
-        unavailable.push(PROJECTION_POSITIONS[index]);
-      }
-    });
-
-    if (!Object.keys(positions).length) {
-      throw new Error("FantasyPros projections are temporarily unavailable.");
-    }
-    value = { positions, unavailable };
   } else {
     value = await fetchFantasyPros(
       definition.path,
@@ -138,8 +183,26 @@ export default async function handler(
     return;
   }
 
+  const startedAt = Date.now();
+  console.log(
+    JSON.stringify({
+      level: "info",
+      message: "Player intelligence request started",
+      dataset,
+      requestId: request.headers["x-vercel-id"] ?? null,
+    }),
+  );
+
   try {
     const data = await fetchDataset(dataset);
+    console.log(
+      JSON.stringify({
+        level: "info",
+        message: "Player intelligence request completed",
+        dataset,
+        durationMs: Date.now() - startedAt,
+      }),
+    );
     response.status(200).json({
       attribution: "Data obtained from FantasyPros.",
       dataset,
@@ -147,6 +210,16 @@ export default async function handler(
       data,
     });
   } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "Player intelligence request failed",
+        dataset,
+        status: error instanceof FantasyProsError ? error.status : null,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedAt,
+      }),
+    );
     response.status(502).json({
       error:
         error instanceof Error
