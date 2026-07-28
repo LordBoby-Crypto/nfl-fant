@@ -109,7 +109,8 @@ export function useWarRoom(active: boolean) {
           setDataError("FantasyPros did not return any player data.");
         } else if (!nextBoard.players.length) {
           setDataError(
-            "FantasyPros responded, but its player records could not be read.",
+            failures.rankings ??
+              "FantasyPros did not return a usable 2026 consensus rankings board.",
           );
         }
       })
