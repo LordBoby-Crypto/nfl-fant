@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { useLeagueSnapshot } from "./hooks/useLeagueSnapshot";
 import { useIntelligenceStatus } from "./hooks/useIntelligenceStatus";
+import { PlayerIntelligencePage } from "./features/player-intelligence/PlayerIntelligencePage";
+import { useWarRoom } from "./features/player-intelligence/useWarRoom";
 import {
   getDraftPosition,
   getUserRoster,
@@ -390,44 +392,16 @@ function DraftRoom({
 function StatusPage({
   view,
   snapshot,
-  intelligence,
 }: {
-  view: Exclude<View, "Overview" | "Draft Room">;
+  view: Exclude<View, "Overview" | "Draft Room" | "Rankings" | "Players">;
   snapshot: LeagueSnapshot;
-  intelligence: {
-    data: IntelligenceStatus | null;
-    error: string | null;
-    linked: boolean;
-  };
 }) {
   const roster = getUserRoster(snapshot);
 
   const content: Record<
-    Exclude<View, "Overview" | "Draft Room">,
+    Exclude<View, "Overview" | "Draft Room" | "Rankings" | "Players">,
     { icon: typeof Activity; title: string; description: string; detail: string }
   > = {
-    Rankings: {
-      icon: Trophy,
-      title: intelligence.data?.configured
-        ? "FantasyPros is securely connected"
-        : "FantasyPros is selected and the backend is ready",
-      description:
-        intelligence.data?.configured
-          ? "The protected data layer is ready for the searchable 2026 PPR board."
-          : "The production API key is the remaining requirement before live 2026 rankings can appear.",
-      detail:
-        intelligence.error ??
-        (intelligence.linked
-          ? "Rankings · ADP · projections · injuries · news"
-          : "The public GitHub Pages build still needs the backend URL."),
-    },
-    Players: {
-      icon: Search,
-      title: "Player research is being prepared",
-      description:
-        "Search, tiers, injury context, ADP, and team-fit scoring will live here.",
-      detail: "No invented rankings or placeholder players are being shown.",
-    },
     "My Team": {
       icon: Shield,
       title: `KingBoby · Roster ${roster?.roster_id ?? "—"}`,
@@ -496,6 +470,7 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { data, error, loading, refreshing, refresh } = useLeagueSnapshot();
   const intelligence = useIntelligenceStatus();
+  const warRoom = useWarRoom(view === "Rankings" || view === "Players");
 
   const title = useMemo(() => {
     if (!data) return "THE League";
@@ -599,11 +574,18 @@ function App() {
             refreshing={refreshing}
             onRefresh={() => void refresh()}
           />
+        ) : view === "Rankings" || view === "Players" ? (
+          <PlayerIntelligencePage
+            leagueName={data.league.name}
+            mode={view}
+            season={data.league.season}
+            status={intelligence.data}
+            warRoom={warRoom}
+          />
         ) : (
           <StatusPage
             view={view}
             snapshot={data}
-            intelligence={intelligence}
           />
         )}
       </div>

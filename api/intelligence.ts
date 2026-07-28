@@ -13,12 +13,12 @@ const DATASETS = {
   },
   projections: {
     path: `/nfl/${SEASON}/projections`,
-    params: { scoring: "PPR", position: "ALL" },
+    params: { scoring: "PPR" },
     ttl: 6 * 60 * 60 * 1000,
   },
   injuries: {
     path: "/nfl/injuries",
-    params: { season: SEASON },
+    params: { season: SEASON, week: "draft" },
     ttl: 15 * 60 * 1000,
   },
   news: {
@@ -37,6 +37,7 @@ type Dataset = keyof typeof DATASETS;
 type CacheEntry = { expiresAt: number; value: unknown };
 
 const cache = new Map<Dataset, CacheEntry>();
+const PROJECTION_POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"] as const;
 
 function requestedDataset(request: VercelRequest): Dataset | null {
   const value = Array.isArray(request.query.dataset)
@@ -46,16 +47,15 @@ function requestedDataset(request: VercelRequest): Dataset | null {
   return value && value in DATASETS ? (value as Dataset) : null;
 }
 
-async function fetchDataset(dataset: Dataset) {
-  const cached = cache.get(dataset);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
-
+async function fetchFantasyPros(
+  path: string,
+  params: Record<string, string>,
+) {
   const apiKey = process.env.FANTASYPROS_API_KEY;
   if (!apiKey) throw new Error("FantasyPros is not configured.");
 
-  const definition = DATASETS[dataset];
-  const search = new URLSearchParams(definition.params);
-  const url = `${API_ROOT}${definition.path}${search.size ? `?${search}` : ""}`;
+  const search = new URLSearchParams(params);
+  const url = `${API_ROOT}${path}${search.size ? `?${search}` : ""}`;
   const upstream = await fetch(url, {
     headers: {
       Accept: "application/json",
@@ -67,7 +67,48 @@ async function fetchDataset(dataset: Dataset) {
     throw new Error(`FantasyPros returned ${upstream.status}.`);
   }
 
-  const value: unknown = await upstream.json();
+  return upstream.json() as Promise<unknown>;
+}
+
+async function fetchDataset(dataset: Dataset) {
+  const cached = cache.get(dataset);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const definition = DATASETS[dataset];
+  let value: unknown;
+
+  if (dataset === "projections") {
+    const results = await Promise.allSettled(
+      PROJECTION_POSITIONS.map(async (position) => ({
+        position,
+        value: await fetchFantasyPros(definition.path, {
+          ...definition.params,
+          position,
+        }),
+      })),
+    );
+    const positions: Record<string, unknown> = {};
+    const unavailable: string[] = [];
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        positions[result.value.position] = result.value.value;
+      } else {
+        unavailable.push(PROJECTION_POSITIONS[index]);
+      }
+    });
+
+    if (!Object.keys(positions).length) {
+      throw new Error("FantasyPros projections are temporarily unavailable.");
+    }
+    value = { positions, unavailable };
+  } else {
+    value = await fetchFantasyPros(
+      definition.path,
+      definition.params as Record<string, string>,
+    );
+  }
+
   cache.set(dataset, {
     expiresAt: Date.now() + definition.ttl,
     value,
