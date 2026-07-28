@@ -18,6 +18,20 @@ Milestone 2 adds:
 - Strict dataset allowlisting, browser-origin checks and upstream caching
 - A live backend/provider readiness state in the dashboard
 
+Milestone 3 adds:
+
+- A real War Room password form that exchanges the password for a signed
+  private session without storing the password
+- Session storage with explicit lock and automatic expired-session recovery
+- A live 2026 PPR Rankings board with player search, position filters, ECR,
+  tiers, ADP, projections, expert range, and injury designations
+- A Players research interface with selected-player projection, availability,
+  practice status, and recent FantasyPros news
+- Parallel, independently recoverable provider feeds so one unavailable
+  dataset does not blank the entire player board
+- Position-specific projection aggregation for QB, RB, WR, TE, K, and DST
+- Responsive table and player-detail layouts for desktop and phone
+
 ## Local development
 
 ```bash

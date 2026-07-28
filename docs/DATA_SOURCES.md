@@ -44,6 +44,10 @@ production key included with HOF or a commercial agreement.
   receives the FantasyPros API key.
 - The backend restricts browser origins and caches upstream results to reduce
   unnecessary calls.
+- Projection requests are split by NFL position and combined server-side so
+  the browser receives one consistent player board.
+- The browser stores only the signed, expiring session token in session
+  storage. The War Room password is never persisted.
 - FantasyPros attribution must be displayed anywhere provider data appears.
 
 Official references:
