@@ -43,7 +43,10 @@ import {
   type DraftRecommendation,
   type TeamDraftState,
 } from "./engine";
+import { DraftStrategyLab } from "./DraftStrategyLab";
+import { mergeKeeperPicks } from "./strategy";
 import { useDraftControls } from "./useDraftControls";
+import { useDraftStrategy } from "./useDraftStrategy";
 
 type WarRoomState = ReturnType<typeof useWarRoom>;
 type DraftPickState = ReturnType<typeof useDraftPicks>;
@@ -292,13 +295,20 @@ function TeamRosterCard({
   user: boolean;
 }) {
   const visibleNeeds = team.needs.filter((need) => need.missing > 0).slice(0, 4);
+  const draftedCount = team.picks.filter((pick) => pick.is_keeper !== true).length;
+  const keeperCount =
+    team.picks.filter((pick) => pick.is_keeper === true).length +
+    team.keepers.length;
   return (
     <article className={`team-roster-card ${current ? "on-clock" : ""} ${user ? "is-user" : ""}`}>
       <header>
         <span>#{team.slot ?? "—"}</span>
         <span>
           <strong>{team.name}</strong>
-          <small>{team.picks.length} drafted</small>
+          <small>
+            {draftedCount} drafted
+            {keeperCount ? ` · ${keeperCount} keeper${keeperCount === 1 ? "" : "s"}` : ""}
+          </small>
         </span>
         {current ? <em>On clock</em> : user ? <em>Your team</em> : null}
       </header>
@@ -314,10 +324,17 @@ function TeamRosterCard({
         )}
       </div>
       <div className="team-pick-list">
-        {team.picks.length ? (
+        {team.keepers.map((keeper) => (
+          <span key={keeper.id}>
+            <small>K{keeper.round ?? "—"}</small>
+            <strong>{keeper.name}</strong>
+            <em>{keeper.position}</em>
+          </span>
+        ))}
+        {team.picks.length || team.keepers.length ? (
           team.picks.map((pick) => (
             <span key={`${pick.pick_no}-${pick.player_id}`}>
-              <small>{pick.pick_no}</small>
+              <small>{pick.is_keeper ? `K${pick.round}` : pick.pick_no}</small>
               <strong>{pickPlayerName(pick)}</strong>
               <em>{pickPosition(pick) ?? "—"}</em>
             </span>
@@ -419,6 +436,13 @@ export function LiveDraftRoom({
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const { controls, moveQueue, toggle } = useDraftControls();
+  const {
+    manualKeepers,
+    simulationRuns,
+    addKeeper,
+    removeKeeper,
+    setSimulationRuns,
+  } = useDraftStrategy();
   const board = warRoom.board?.players ?? EMPTY_PLAYERS;
   const canSimulate =
     draft.status === "pre_draft" && !actualPosition && Boolean(userRoster);
@@ -431,7 +455,28 @@ export function LiveDraftRoom({
           : {},
     [actualPosition, draft, simSlot, simulationActive, userRoster],
   );
-  const picks = simulationActive ? simulatedPicks : draftPicks.picks;
+  const keeperResult = useMemo(
+    () =>
+      mergeKeeperPicks({
+        draft,
+        picks: draftPicks.picks,
+        manualKeepers,
+        board,
+        users: snapshot.users,
+        rosters: snapshot.rosters,
+        slotMap,
+      }),
+    [
+      board,
+      draft,
+      draftPicks.picks,
+      manualKeepers,
+      slotMap,
+      snapshot.rosters,
+      snapshot.users,
+    ],
+  );
+  const picks = simulationActive ? simulatedPicks : keeperResult.picks;
   const teams = useMemo(
     () =>
       buildTeamDraftStates({
@@ -486,6 +531,10 @@ export function LiveDraftRoom({
   const currentTeam = teams.find(
     (team) => team.rosterId === cursor.currentRosterId,
   );
+  const completedPicks = useMemo(
+    () => picks.filter((pick) => pick.is_keeper !== true),
+    [picks],
+  );
 
   function advanceSimulation(basePicks: SleeperDraftPick[]) {
     if (!userRoster || !board.length) return basePicks;
@@ -501,8 +550,23 @@ export function LiveDraftRoom({
   }
 
   function startSimulation() {
+    if (!userRoster) return;
+    const simulationSlotMap = createSimulationSlotMap(
+      draft,
+      userRoster.roster_id,
+      simSlot,
+    );
+    const initialPicks = mergeKeeperPicks({
+      draft,
+      picks: draftPicks.picks.filter((pick) => pick.is_keeper === true),
+      manualKeepers,
+      board,
+      users: snapshot.users,
+      rosters: snapshot.rosters,
+      slotMap: simulationSlotMap,
+    }).picks;
     setSimulationActive(true);
-    setSimulatedPicks(advanceSimulation([]));
+    setSimulatedPicks(advanceSimulation(initialPicks));
   }
 
   function draftInSimulation(player: PlayerIntelligence) {
@@ -656,6 +720,25 @@ export function LiveDraftRoom({
 
       {warRoom.isUnlocked ? (
         <>
+          {userRoster ? (
+            <DraftStrategyLab
+              draft={draft}
+              users={snapshot.users}
+              rosters={snapshot.rosters}
+              board={board}
+              basePicks={simulationActive ? simulatedPicks : draftPicks.picks}
+              teams={teams}
+              userRosterId={userRoster.roster_id}
+              slotMap={slotMap}
+              controls={controls}
+              recommendations={recommendations}
+              manualKeepers={manualKeepers}
+              simulationRuns={simulationRuns}
+              onAddKeeper={addKeeper}
+              onRemoveKeeper={removeKeeper}
+              onSimulationRunsChange={setSimulationRuns}
+            />
+          ) : null}
           <section className="draft-command-grid">
             <section className="recommendations-panel">
               <header className="draft-panel-heading">
@@ -725,12 +808,12 @@ export function LiveDraftRoom({
                 <Check />
                 <span>
                   <h2>Recent picks</h2>
-                  <p>{picks.length} selections</p>
+                  <p>{completedPicks.length} selections</p>
                 </span>
               </header>
               <div className="recent-pick-list">
-                {picks.length ? (
-                  [...picks]
+                {completedPicks.length ? (
+                  [...completedPicks]
                     .reverse()
                     .slice(0, 16)
                     .map((pick) => (

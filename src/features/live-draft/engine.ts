@@ -34,8 +34,20 @@ export interface TeamDraftState {
   name: string;
   slot: number | null;
   picks: SleeperDraftPick[];
+  keepers: KeeperAssignment[];
   counts: Record<DraftPosition, number>;
   needs: PositionNeed[];
+}
+
+export interface KeeperAssignment {
+  id: string;
+  playerId: string;
+  name: string;
+  position: DraftPosition;
+  rosterId: number;
+  round: number | null;
+  pickNumber: number | null;
+  source: "sleeper" | "manual";
 }
 
 export interface RecommendationReason {
@@ -110,6 +122,21 @@ export function getDraftSlotForPick(
   return offset + 1;
 }
 
+export function getPickNumberForRoundSlot(
+  round: number,
+  slot: number,
+  teams: number,
+  type: Draft["type"] = "snake",
+) {
+  const safeRound = Math.max(1, Math.floor(round));
+  const safeSlot = Math.min(teams, Math.max(1, Math.floor(slot)));
+  const offset =
+    type === "snake" && safeRound % 2 === 0
+      ? teams - safeSlot
+      : safeSlot - 1;
+  return (safeRound - 1) * teams + offset + 1;
+}
+
 export function getUserDraftSlot(
   draft: Draft,
   userId: string,
@@ -152,7 +179,15 @@ export function getDraftCursor(
   slotMap: Record<string, number> = draft.slot_to_roster_id,
 ): DraftCursor {
   const totalPicks = draft.settings.teams * draft.settings.rounds;
-  const currentPick = Math.min(picks.length + 1, totalPicks + 1);
+  const occupiedPicks = new Set(
+    picks
+      .map((pick) => Number(pick.pick_no))
+      .filter((pick) => pick >= 1 && pick <= totalPicks),
+  );
+  let currentPick = 1;
+  while (currentPick <= totalPicks && occupiedPicks.has(currentPick)) {
+    currentPick += 1;
+  }
   const complete = currentPick > totalPicks;
   const safePick = Math.min(currentPick, totalPicks);
   const currentSlot = getDraftSlotForPick(
@@ -163,6 +198,7 @@ export function getDraftCursor(
   const currentRosterId = complete ? null : Number(slotMap[String(currentSlot)] ?? 0) || null;
   let nextUserPick: number | null = null;
   for (let pick = currentPick; pick <= totalPicks; pick += 1) {
+    if (occupiedPicks.has(pick)) continue;
     const slot = getDraftSlotForPick(pick, draft.settings.teams, draft.type);
     if (Number(slotMap[String(slot)]) === userRosterId) {
       nextUserPick = pick;
@@ -233,12 +269,14 @@ export function buildTeamDraftStates({
   rosters,
   picks,
   slotMap = draft.slot_to_roster_id,
+  keepers = [],
 }: {
   draft: Draft;
   users: LeagueUser[];
   rosters: Roster[];
   picks: SleeperDraftPick[];
   slotMap?: Record<string, number>;
+  keepers?: KeeperAssignment[];
 }) {
   const usersById = new Map(users.map((user) => [user.user_id, user]));
   const picksByRoster = new Map<number, SleeperDraftPick[]>();
@@ -263,6 +301,17 @@ export function buildTeamDraftStates({
         const position = pickPosition(pick);
         if (position) counts[position] += 1;
       }
+      const draftedIds = new Set(teamPicks.map((pick) => String(pick.player_id)));
+      const draftedNames = new Set(
+        teamPicks.map((pick) => normalizePlayerName(pickPlayerName(pick))),
+      );
+      const teamKeepers = keepers.filter(
+        (keeper) =>
+          keeper.rosterId === roster.roster_id &&
+          !draftedIds.has(String(keeper.playerId)) &&
+          !draftedNames.has(normalizePlayerName(keeper.name)),
+      );
+      for (const keeper of teamKeepers) counts[keeper.position] += 1;
       return {
         rosterId: roster.roster_id,
         ownerId: roster.owner_id,
@@ -272,6 +321,7 @@ export function buildTeamDraftStates({
           `Roster ${roster.roster_id}`,
         slot: slotByRoster.get(roster.roster_id) ?? null,
         picks: teamPicks,
+        keepers: teamKeepers,
         counts,
         needs: calculateNeeds(draft, counts),
       };
@@ -283,13 +333,38 @@ export function buildTeamDraftStates({
     });
 }
 
+export function addDraftPickToTeamState(
+  draft: Draft,
+  team: TeamDraftState,
+  pick: SleeperDraftPick,
+) {
+  const counts = { ...team.counts };
+  const position = pickPosition(pick);
+  if (position) counts[position] += 1;
+  return {
+    ...team,
+    picks: [...team.picks, pick].sort(
+      (left, right) => left.pick_no - right.pick_no,
+    ),
+    counts,
+    needs: calculateNeeds(draft, counts),
+  };
+}
+
 export function availablePlayers(
   board: PlayerIntelligence[],
   picks: SleeperDraftPick[],
+  keepers: KeeperAssignment[] = [],
 ) {
-  const draftedIds = new Set(picks.map((pick) => String(pick.player_id)));
+  const draftedIds = new Set([
+    ...picks.map((pick) => String(pick.player_id)),
+    ...keepers.map((keeper) => String(keeper.playerId)),
+  ]);
   const draftedNames = new Set(
-    picks.map((pick) => normalizePlayerName(pickPlayerName(pick))),
+    [
+      ...picks.map((pick) => pickPlayerName(pick)),
+      ...keepers.map((keeper) => keeper.name),
+    ].map(normalizePlayerName),
   );
   return board.filter(
     (player) =>
@@ -549,7 +624,7 @@ export function recommendPlayers({
     .slice(0, 5);
 }
 
-function cpuPlayerScore(
+export function cpuPlayerScore(
   player: PlayerIntelligence,
   team: TeamDraftState,
   round: number,
@@ -588,7 +663,7 @@ export function createSimulatedPick({
       draft.type,
     ),
     pick_no: pickNumber,
-    is_keeper: null,
+    is_keeper: false,
     metadata: {
       first_name: player.name.split(" ")[0],
       last_name: player.name.split(" ").slice(1).join(" "),
@@ -606,6 +681,7 @@ export function simulateToUserTurn({
   board,
   userRosterId,
   slotMap,
+  keepers = [],
 }: {
   draft: Draft;
   users: LeagueUser[];
@@ -614,21 +690,24 @@ export function simulateToUserTurn({
   board: PlayerIntelligence[];
   userRosterId: number;
   slotMap: Record<string, number>;
+  keepers?: KeeperAssignment[];
 }) {
   const nextPicks = [...picks];
   const totalPicks = draft.settings.teams * draft.settings.rounds;
-  while (nextPicks.length < totalPicks) {
+  let guard = 0;
+  while (guard < totalPicks) {
     const cursor = getDraftCursor(draft, nextPicks, userRosterId, slotMap);
     if (cursor.isUserTurn || cursor.complete || cursor.currentRosterId === null) {
       break;
     }
-    const available = availablePlayers(board, nextPicks);
+    const available = availablePlayers(board, nextPicks, keepers);
     const teams = buildTeamDraftStates({
       draft,
       users,
       rosters,
       picks: nextPicks,
       slotMap,
+      keepers,
     });
     const team = teams.find((item) => item.rosterId === cursor.currentRosterId);
     if (!team || !available.length) break;
@@ -648,6 +727,7 @@ export function simulateToUserTurn({
         ownerId: team.ownerId,
       }),
     );
+    guard += 1;
   }
   return nextPicks;
 }
