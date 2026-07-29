@@ -1,7 +1,10 @@
 import {
   useDeferredValue,
+  useEffect,
   useMemo,
+  useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
 } from "react";
 import {
@@ -12,6 +15,7 @@ import {
   ChevronUp,
   CircleAlert,
   Crosshair,
+  Grid3X3,
   ListPlus,
   LockKeyhole,
   MoonStar,
@@ -19,8 +23,11 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  ShieldAlert,
   Star,
   Target,
+  TrendingDown,
+  TrendingUp,
   UsersRound,
 } from "lucide-react";
 import type { useDraftPicks } from "../../hooks/useDraftPicks";
@@ -44,6 +51,22 @@ import {
   type TeamDraftState,
 } from "./engine";
 import { DraftStrategyLab } from "./DraftStrategyLab";
+import { forecastOpponentPicks, type OpponentForecast } from "./strategy";
+import {
+  buildDraftBoardRows,
+  buildQueueDepletionWarning,
+  buildWaitGuidance,
+  compareRecommendations,
+  detectDraftedControlledPlayers,
+  detectPositionRun,
+  nextUserDecisionPick,
+  tierBreakForPlayer,
+  type ControlledPlayerDrafted,
+  type PlayerWaitGuidance,
+  type QueueDepletionWarning,
+  type RecommendationChange,
+  type TierBreakWarning,
+} from "./liveIntelligence";
 import { useDraftControls } from "./useDraftControls";
 import { useDraftStrategy } from "./useDraftStrategy";
 
@@ -155,6 +178,9 @@ function DraftUnlock({
 function RecommendationCard({
   recommendation,
   rank,
+  guidance,
+  tierBreak,
+  change,
   controls,
   canDraft,
   onDraft,
@@ -162,14 +188,33 @@ function RecommendationCard({
 }: {
   recommendation: DraftRecommendation;
   rank: number;
+  guidance: PlayerWaitGuidance | null;
+  tierBreak: TierBreakWarning | null;
+  change: RecommendationChange | null;
   controls: DraftControlState;
   canDraft: boolean;
   onDraft: (player: PlayerIntelligence) => void;
   onToggle: (kind: DraftControlKind, playerId: string) => void;
 }) {
   const { player } = recommendation;
+  const changeLabel =
+    change?.kind === "new"
+      ? "New after last pick"
+      : change?.kind === "up"
+        ? `Up ${change.rankDelta}`
+        : change?.kind === "down"
+          ? `Down ${Math.abs(change.rankDelta)}`
+          : change && change.scoreDelta !== 0
+            ? `${change.scoreDelta > 0 ? "+" : ""}${change.scoreDelta} score`
+            : null;
   return (
-    <article className={`recommendation-card ${rank === 1 ? "top-pick" : ""}`}>
+    <article
+      className={`recommendation-card ${rank === 1 ? "top-pick" : ""} ${
+        change && change.kind !== "steady"
+          ? `recommendation-changed change-${change.kind}`
+          : ""
+      }`}
+    >
       <div className="recommendation-rank">{rank}</div>
       <div className="recommendation-main">
         <header>
@@ -188,6 +233,29 @@ function RecommendationCard({
             <small>fit score</small>
           </span>
         </header>
+        {guidance ? (
+          <div className="recommendation-guidance">
+            <strong className={`is-${guidance.tone}`}>
+              {guidance.guidance}
+            </strong>
+            <span>
+              {guidance.survivalProbability === null
+                ? guidance.reason
+                : `${guidance.survivalProbability}% chance to survive to pick ${guidance.nextDecisionPick}`}
+            </span>
+            {tierBreak?.urgent ? (
+              <em>
+                Tier break · {tierBreak.remainingInTier} left
+              </em>
+            ) : null}
+            {changeLabel ? (
+              <b className={`change-${change?.kind}`}>
+                {change?.kind === "down" ? <TrendingDown /> : <TrendingUp />}
+                {changeLabel}
+              </b>
+            ) : null}
+          </div>
+        ) : null}
         <DraftControls
           controls={controls}
           playerId={player.id}
@@ -335,18 +403,210 @@ function TeamRosterCard({
   );
 }
 
+function DraftBoardGrid({
+  draft,
+  teams,
+  picks,
+  currentPick,
+  userRosterId,
+}: {
+  draft: LeagueSnapshot["draft"];
+  teams: TeamDraftState[];
+  picks: SleeperDraftPick[];
+  currentPick: number;
+  userRosterId: number | null;
+}) {
+  const rows = useMemo(
+    () => buildDraftBoardRows(draft, teams, picks),
+    [draft, picks, teams],
+  );
+  const style = {
+    "--draft-team-count": draft.settings.teams,
+  } as CSSProperties;
+
+  return (
+    <section className="full-draft-board">
+      <header>
+        <Grid3X3 />
+        <span>
+          <h2>Full {draft.settings.teams}-team draft board</h2>
+          <p>
+            {picks.length} of {draft.settings.teams * draft.settings.rounds} selections complete
+          </p>
+        </span>
+        <small>Scroll sideways to see every team</small>
+      </header>
+      <div className="draft-board-scroll">
+        <div className="draft-board-grid" style={style}>
+          <span className="draft-board-corner">RD</span>
+          {teams.map((team) => (
+            <span
+              className={`draft-board-team ${
+                team.rosterId === userRosterId ? "is-user" : ""
+              }`}
+              key={team.rosterId}
+            >
+              <b>#{team.slot ?? "—"}</b>
+              <strong>{team.name}</strong>
+            </span>
+          ))}
+          {rows.flatMap((row) => [
+            <span className="draft-board-round" key={`round-${row.round}`}>
+              {row.round}
+            </span>,
+            ...row.cells.map((cell) => {
+              const position = cell.pick ? pickPosition(cell.pick) : null;
+              return (
+                <span
+                  className={`draft-board-cell ${
+                    cell.pickNumber === currentPick && !cell.pick ? "is-current" : ""
+                  } ${cell.team?.rosterId === userRosterId ? "is-user" : ""}`}
+                  key={`${row.round}-${cell.slot}`}
+                  title={
+                    cell.pick
+                      ? `Pick ${cell.pickNumber}: ${pickPlayerName(cell.pick)}`
+                      : `Pick ${cell.pickNumber}`
+                  }
+                >
+                  <small>{cell.pickNumber}</small>
+                  {cell.pick ? (
+                    <>
+                      <b className={`position-${(position ?? "—").toLowerCase()}`}>
+                        {position ?? "—"}
+                      </b>
+                      <strong>{pickPlayerName(cell.pick)}</strong>
+                    </>
+                  ) : (
+                    <em>{cell.pickNumber === currentPick ? "On clock" : "Open"}</em>
+                  )}
+                </span>
+              );
+            }),
+          ])}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LiveIntelligencePanel({
+  run,
+  tierBreak,
+  queue,
+  draftedControlled,
+  expected,
+  changedCount,
+}: {
+  run: ReturnType<typeof detectPositionRun>;
+  tierBreak: TierBreakWarning | null;
+  queue: QueueDepletionWarning;
+  draftedControlled: ControlledPlayerDrafted[];
+  expected: OpponentForecast[];
+  changedCount: number;
+}) {
+  const latestDrafted = draftedControlled[0] ?? null;
+  return (
+    <section className="live-intelligence-panel">
+      <header>
+        <ShieldAlert />
+        <span>
+          <h2>Live draft intelligence</h2>
+          <p>Rebuilt after every selection using the board, tiers, queue and opponent needs.</p>
+        </span>
+        <small>
+          {changedCount
+            ? `${changedCount} recommendation${changedCount === 1 ? "" : "s"} changed`
+            : "Recommendations steady"}
+        </small>
+      </header>
+      <div className="live-alert-grid">
+        <article className={run ? "is-warning" : "is-clear"}>
+          <small>Position run</small>
+          <strong>
+            {run
+              ? `${run.count} ${run.position}s in the last ${run.window} picks`
+              : "No active run"}
+          </strong>
+          <p>
+            {run
+              ? `Pressure detected at picks ${run.pickNumbers.join(", ")}.`
+              : "No position has crossed the four-of-six alert threshold."}
+          </p>
+        </article>
+        <article className={tierBreak?.urgent ? "is-warning" : "is-clear"}>
+          <small>Tier break</small>
+          <strong>
+            {tierBreak
+              ? `${tierBreak.remainingInTier} ${tierBreak.position}${tierBreak.remainingInTier === 1 ? "" : "s"} left in tier ${tierBreak.tier}`
+              : "No immediate tier cliff"}
+          </strong>
+          <p>
+            {tierBreak?.urgent
+              ? `The next tier begins${tierBreak.ecrDrop === null ? "" : ` about ${tierBreak.ecrDrop} ECR spots later`}.`
+              : "The top recommendation still has a stable same-tier fallback."}
+          </p>
+        </article>
+        <article className={`is-${queue.level}`}>
+          <small>Queue health</small>
+          <strong>{queue.remaining} available · {queue.drafted} drafted</strong>
+          <p>{queue.message}</p>
+        </article>
+        <article className={latestDrafted ? "is-danger" : "is-clear"}>
+          <small>Tracked-player detection</small>
+          <strong>
+            {latestDrafted
+              ? `${latestDrafted.player.name} drafted at ${latestDrafted.pick.pick_no}`
+              : "Targets and sleepers available"}
+          </strong>
+          <p>
+            {latestDrafted
+              ? `${latestDrafted.kinds.map((kind) => kind[0].toUpperCase() + kind.slice(1)).join(" + ")} status was detected automatically.`
+              : "No queued, targeted or sleeper player has been lost."}
+          </p>
+        </article>
+      </div>
+      <div className="expected-picks-strip">
+        <span>
+          <small>Expected before your next turn</small>
+          <strong>
+            {expected.length
+              ? `${expected.length} modeled selection${expected.length === 1 ? "" : "s"}`
+              : "No intervening selections"}
+          </strong>
+        </span>
+        <div>
+          {expected.length ? (
+            expected.map((forecast) => (
+              <article key={forecast.pickNumber}>
+                <small>Pick {forecast.pickNumber} · {forecast.teamName}</small>
+                <b className={`position-${forecast.player.position.toLowerCase()}`}>
+                  {forecast.player.position}
+                </b>
+                <strong>{forecast.player.name}</strong>
+                <em>{forecast.confidence} confidence</em>
+              </article>
+            ))
+          ) : (
+            <p>You are on the clock, the draft is complete, or the order is still pending.</p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function QueuePanel({
-  board,
+  available,
   controls,
   onMove,
   onToggle,
 }: {
-  board: PlayerIntelligence[];
+  available: PlayerIntelligence[];
   controls: DraftControlState;
   onMove: (playerId: string, direction: -1 | 1) => void;
   onToggle: (kind: DraftControlKind, playerId: string) => void;
 }) {
-  const playersById = new Map(board.map((player) => [player.id, player]));
+  const playersById = new Map(available.map((player) => [player.id, player]));
   const queue = controls.queue
     .map((id) => playersById.get(id))
     .filter((player): player is PlayerIntelligence => Boolean(player));
@@ -481,6 +741,121 @@ export function LiveDraftRoom({
         : [],
     [available, board, controls, cursor, teams, userRoster],
   );
+  const positionRun = useMemo(() => detectPositionRun(picks), [picks]);
+  const nextDecisionPick = useMemo(
+    () =>
+      userRoster
+        ? nextUserDecisionPick({
+            draft,
+            picks,
+            cursor,
+            userRosterId: userRoster.roster_id,
+            slotMap,
+          })
+        : null,
+    [cursor, draft, picks, slotMap, userRoster],
+  );
+  const tierBreaks = useMemo(
+    () =>
+      new Map(
+        recommendations.map((recommendation) => [
+          recommendation.player.id,
+          tierBreakForPlayer(recommendation.player, available),
+        ]),
+      ),
+    [available, recommendations],
+  );
+  const waitGuidance = useMemo(
+    () =>
+      new Map(
+        recommendations.map((recommendation) => {
+          const tierBreak = tierBreaks.get(recommendation.player.id) ?? null;
+          return [
+            recommendation.player.id,
+            buildWaitGuidance({
+              player: recommendation.player,
+              nextDecisionPick,
+              tierBreak,
+              positionRun,
+            }),
+          ];
+        }),
+      ),
+    [nextDecisionPick, positionRun, recommendations, tierBreaks],
+  );
+  const draftedControlled = useMemo(
+    () => detectDraftedControlledPlayers(controls, board, picks),
+    [board, controls, picks],
+  );
+  const queueWarning = useMemo(
+    () =>
+      buildQueueDepletionWarning(
+        controls,
+        available,
+        draftedControlled,
+        cursor.picksUntilUser,
+      ),
+    [available, controls, cursor.picksUntilUser, draftedControlled],
+  );
+  const expectedPicks = useMemo(() => {
+    if (
+      !userRoster ||
+      !board.length ||
+      nextDecisionPick === null ||
+      nextDecisionPick <= cursor.currentPick
+    ) {
+      return [];
+    }
+    return forecastOpponentPicks({
+      draft,
+      users: snapshot.users,
+      rosters: snapshot.rosters,
+      picks,
+      board,
+      userRosterId: userRoster.roster_id,
+      slotMap,
+      assumedUserPick: cursor.isUserTurn
+        ? recommendations[0]?.player
+        : undefined,
+      limit: Math.min(14, Math.max(0, nextDecisionPick - cursor.currentPick)),
+    });
+  }, [
+    board,
+    cursor.currentPick,
+    cursor.isUserTurn,
+    draft,
+    nextDecisionPick,
+    picks,
+    recommendations,
+    slotMap,
+    snapshot.rosters,
+    snapshot.users,
+    userRoster,
+  ]);
+  const [recommendationChanges, setRecommendationChanges] = useState(
+    () => new Map<string, RecommendationChange>(),
+  );
+  const previousRecommendations = useRef<DraftRecommendation[]>([]);
+  const previousPickSignature = useRef("");
+  const pickSignature = useMemo(
+    () => picks.map((pick) => `${pick.pick_no}:${pick.player_id}`).join("|"),
+    [picks],
+  );
+  useEffect(() => {
+    if (!recommendations.length) return;
+    if (!previousRecommendations.current.length) {
+      previousRecommendations.current = recommendations;
+      previousPickSignature.current = pickSignature;
+      return;
+    }
+    if (pickSignature !== previousPickSignature.current) {
+      setRecommendationChanges(
+        compareRecommendations(previousRecommendations.current, recommendations),
+      );
+      previousPickSignature.current = pickSignature;
+      previousRecommendations.current = recommendations;
+    }
+  }, [pickSignature, recommendations]);
   const visibleAvailable = useMemo(() => {
     const search = deferredQuery.trim().toLocaleLowerCase();
     return available
@@ -666,8 +1041,33 @@ export function LiveDraftRoom({
         </div>
       ) : null}
 
+      <DraftBoardGrid
+        draft={draft}
+        teams={teams}
+        picks={picks}
+        currentPick={cursor.currentPick}
+        userRosterId={userRoster?.roster_id ?? null}
+      />
+
       {warRoom.isUnlocked ? (
         <>
+          <LiveIntelligencePanel
+            run={positionRun}
+            tierBreak={
+              recommendations[0]
+                ? (tierBreaks.get(recommendations[0].player.id) ?? null)
+                : null
+            }
+            queue={queueWarning}
+            draftedControlled={draftedControlled}
+            expected={expectedPicks}
+            changedCount={
+              [...recommendationChanges.values()].filter(
+                (change) =>
+                  change.kind !== "steady" || change.scoreDelta !== 0,
+              ).length
+            }
+          />
           {userRoster ? (
             <DraftStrategyLab
               draft={draft}
@@ -700,6 +1100,16 @@ export function LiveDraftRoom({
                       key={recommendation.player.id}
                       recommendation={recommendation}
                       rank={index + 1}
+                      guidance={
+                        waitGuidance.get(recommendation.player.id) ?? null
+                      }
+                      tierBreak={
+                        tierBreaks.get(recommendation.player.id) ?? null
+                      }
+                      change={
+                        recommendationChanges.get(recommendation.player.id) ??
+                        null
+                      }
                       controls={controls}
                       canDraft={simulationActive && cursor.isUserTurn}
                       onDraft={draftInSimulation}
@@ -775,7 +1185,7 @@ export function LiveDraftRoom({
           </section>
 
           <QueuePanel
-            board={board}
+            available={available}
             controls={controls}
             onMove={moveQueue}
             onToggle={toggle}
