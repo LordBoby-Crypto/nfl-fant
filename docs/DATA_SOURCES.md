@@ -46,6 +46,11 @@ production key included with HOF or a commercial agreement.
   unnecessary calls.
 - Projection requests are split by NFL position and combined server-side so
   the browser receives one consistent player board.
+- Weekly projections use the requested NFL week and a one-hour server cache;
+  rest-of-season projections use `ros=true` and remain a separate six-hour
+  dataset so start/sit and long-range decisions cannot be mixed accidentally.
+- Sleeper matchup rows are paired by their official `matchup_id`; playoff odds
+  remain model estimates and are never presented as provider guarantees.
 - The browser stores only the signed, expiring session token in session
   storage. The War Room password is never persisted.
 - FantasyPros attribution must be displayed anywhere provider data appears.

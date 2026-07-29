@@ -33,10 +33,10 @@ const DATASETS = {
   },
 } as const;
 
-type Dataset = keyof typeof DATASETS;
+type Dataset = keyof typeof DATASETS | "weekly-projections";
 type CacheEntry = { expiresAt: number; value: unknown };
 
-const cache = new Map<Dataset, CacheEntry>();
+const cache = new Map<string, CacheEntry>();
 const FANTASY_POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"] as const;
 
 class FantasyProsError extends Error {
@@ -54,7 +54,19 @@ function requestedDataset(request: VercelRequest): Dataset | null {
     ? request.query.dataset[0]
     : request.query.dataset;
 
-  return value && value in DATASETS ? (value as Dataset) : null;
+  return value && (value in DATASETS || value === "weekly-projections")
+    ? (value as Dataset)
+    : null;
+}
+
+function requestedWeek(request: VercelRequest) {
+  const raw = Array.isArray(request.query.week)
+    ? request.query.week[0]
+    : request.query.week;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 1 && value <= 18
+    ? value
+    : null;
 }
 
 async function fetchFantasyPros(
@@ -134,9 +146,27 @@ async function fetchPositionDataset(
   return { positions, unavailable };
 }
 
-async function fetchDataset(dataset: Dataset) {
-  const cached = cache.get(dataset);
+async function fetchDataset(dataset: Dataset, week: number | null) {
+  const cacheKey =
+    dataset === "weekly-projections"
+      ? `${dataset}:${week ?? "invalid"}`
+      : dataset;
+  const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  if (dataset === "weekly-projections") {
+    if (!week) throw new Error("Choose an NFL week from 1 through 18.");
+    const value = await fetchPositionDataset(
+      "projections",
+      `/nfl/${SEASON}/projections`,
+      { scoring: "PPR", week: String(week) },
+    );
+    cache.set(cacheKey, {
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      value,
+    });
+    return value;
+  }
 
   const definition = DATASETS[dataset];
   let value: unknown;
@@ -154,7 +184,7 @@ async function fetchDataset(dataset: Dataset) {
     );
   }
 
-  cache.set(dataset, {
+  cache.set(cacheKey, {
     expiresAt: Date.now() + definition.ttl,
     value,
   });
@@ -178,8 +208,14 @@ export default async function handler(
   const dataset = requestedDataset(request);
   if (!dataset) {
     response.status(400).json({
-      error: "Choose rankings, projections, injuries, news, or players.",
+      error:
+        "Choose rankings, projections, weekly-projections, injuries, news, or players.",
     });
+    return;
+  }
+  const week = dataset === "weekly-projections" ? requestedWeek(request) : null;
+  if (dataset === "weekly-projections" && !week) {
+    response.status(400).json({ error: "Choose an NFL week from 1 through 18." });
     return;
   }
 
@@ -189,12 +225,13 @@ export default async function handler(
       level: "info",
       message: "Player intelligence request started",
       dataset,
+      week,
       requestId: request.headers["x-vercel-id"] ?? null,
     }),
   );
 
   try {
-    const data = await fetchDataset(dataset);
+    const data = await fetchDataset(dataset, week);
     console.log(
       JSON.stringify({
         level: "info",
@@ -206,6 +243,7 @@ export default async function handler(
     response.status(200).json({
       attribution: "Data obtained from FantasyPros.",
       dataset,
+      week,
       fetchedAt: new Date().toISOString(),
       data,
     });
@@ -215,6 +253,7 @@ export default async function handler(
         level: "error",
         message: "Player intelligence request failed",
         dataset,
+        ...(week ? { week } : {}),
         status: error instanceof FantasyProsError ? error.status : null,
         error: error instanceof Error ? error.message : String(error),
         durationMs: Date.now() - startedAt,

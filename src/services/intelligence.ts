@@ -16,6 +16,7 @@ export interface IntelligenceStatus {
 export type IntelligenceDataset =
   | "rankings"
   | "projections"
+  | "weekly-projections"
   | "injuries"
   | "news"
   | "players";
@@ -145,9 +146,14 @@ export async function getIntelligenceDataset(
   dataset: IntelligenceDataset,
   token: string,
   signal?: AbortSignal,
+  week?: number,
 ) {
+  const query = new URLSearchParams({ dataset });
+  if (dataset === "weekly-projections" && week) {
+    query.set("week", String(week));
+  }
   const response = await fetch(
-    apiUrl(`/api/intelligence?dataset=${encodeURIComponent(dataset)}`),
+    apiUrl(`/api/intelligence?${query}`),
     {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
