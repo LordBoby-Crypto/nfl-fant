@@ -27,10 +27,12 @@ import {
 import { useLeagueSnapshot } from "./hooks/useLeagueSnapshot";
 import { useDraftPicks } from "./hooks/useDraftPicks";
 import { useIntelligenceStatus } from "./hooks/useIntelligenceStatus";
+import { useWaiverActivity } from "./hooks/useWaiverActivity";
 import { PlayerIntelligencePage } from "./features/player-intelligence/PlayerIntelligencePage";
 import { useWarRoom } from "./features/player-intelligence/useWarRoom";
 import { LiveDraftRoom } from "./features/live-draft/LiveDraftRoom";
 import { MyTeamPage } from "./features/my-team/MyTeamPage";
+import { WaiverAssistantPage } from "./features/waivers/WaiverAssistantPage";
 import {
   getDraftPosition,
   USERNAME,
@@ -49,7 +51,7 @@ type View =
   | "Matchups";
 type StatusView = Exclude<
   View,
-  "Overview" | "Draft Room" | "Rankings" | "Players" | "My Team"
+  "Overview" | "Draft Room" | "Rankings" | "Players" | "My Team" | "Waivers"
 >;
 
 const NAV_ITEMS: Array<{
@@ -327,13 +329,6 @@ function StatusPage({
     StatusView,
     { icon: typeof Activity; title: string; description: string; detail: string }
   > = {
-    Waivers: {
-      icon: Sparkles,
-      title: "Waiver assistant activates after the draft",
-      description:
-        "It will compare available players against your roster needs and league scoring.",
-      detail: `$${snapshot.league.settings.waiver_budget} FAAB budget · waiver activity will come directly from Sleeper.`,
-    },
     Trades: {
       icon: WalletCards,
       title: "Trade analyzer activates after rosters exist",
@@ -390,12 +385,17 @@ function App() {
     view === "Draft Room" ||
       view === "Rankings" ||
       view === "Players" ||
-      view === "My Team",
+      view === "My Team" ||
+      view === "Waivers",
+  );
+  const waiverActivity = useWaiverActivity(
+    data?.league.league_id ?? "",
+    view === "Waivers" && Boolean(data),
   );
   const draftPicks = useDraftPicks(
     data?.draft.draft_id ?? null,
     data?.draft.status ?? null,
-    view === "Draft Room" || view === "My Team",
+    view === "Draft Room" || view === "My Team" || view === "Waivers",
   );
 
   const title = useMemo(() => {
@@ -524,6 +524,19 @@ function App() {
               void draftPicks.refresh();
             }}
           />
+        ) : view === "Waivers" ? (
+          <WaiverAssistantPage
+            snapshot={data}
+            draftPicks={draftPicks}
+            warRoom={warRoom}
+            activity={waiverActivity}
+            refreshing={refreshing}
+            onRefresh={() => {
+              void refresh();
+              void draftPicks.refresh();
+              void waiverActivity.refresh();
+            }}
+          />
         ) : (
           <StatusPage
             view={view}
@@ -534,7 +547,7 @@ function App() {
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         {NAV_ITEMS.filter((item) =>
-          ["Overview", "Draft Room", "My Team", "Rankings"].includes(item.name),
+          ["Overview", "Draft Room", "My Team", "Waivers"].includes(item.name),
         ).map((item) => {
           const Icon = item.icon;
           return (
@@ -549,6 +562,8 @@ function App() {
                   ? "Draft"
                   : item.name === "My Team"
                     ? "Team"
+                    : item.name === "Waivers"
+                      ? "Waivers"
                     : item.name}
               </span>
             </button>

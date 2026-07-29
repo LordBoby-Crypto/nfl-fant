@@ -108,6 +108,38 @@ export interface Roster {
   };
 }
 
+export interface SleeperTrendingPlayer {
+  player_id: string;
+  count: number;
+}
+
+export interface SleeperTransaction {
+  transaction_id: string;
+  type: "waiver" | "free_agent" | "trade" | string;
+  status: "complete" | "failed" | "pending" | string;
+  status_updated: number;
+  created: number;
+  leg: number;
+  roster_ids: number[];
+  adds: Record<string, number> | null;
+  drops: Record<string, number> | null;
+  settings: {
+    waiver_bid?: number;
+    seq?: number;
+    priority?: number;
+    [key: string]: number | undefined;
+  } | null;
+  metadata: Record<string, string> | null;
+}
+
+export interface NflState {
+  week: number;
+  display_week: number;
+  leg: number;
+  season: string;
+  season_type: "pre" | "regular" | "post";
+}
+
 export interface LeagueSnapshot {
   league: League;
   draft: Draft;

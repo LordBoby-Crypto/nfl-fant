@@ -3,9 +3,12 @@ import type {
   League,
   LeagueSnapshot,
   LeagueUser,
+  NflState,
   Roster,
   SleeperDraftPick,
   SleeperPlayer,
+  SleeperTransaction,
+  SleeperTrendingPlayer,
 } from "../types";
 
 export const LEAGUE_ID = "1387560115116208128";
@@ -59,6 +62,36 @@ export async function getDraftPicks(
   signal?: AbortSignal,
 ): Promise<SleeperDraftPick[]> {
   return getJson<SleeperDraftPick[]>(`/draft/${draftId}/picks`, signal);
+}
+
+export async function getWaiverActivity(
+  leagueId: string,
+  signal?: AbortSignal,
+) {
+  const state = await getJson<NflState>("/state/nfl", signal);
+  const currentWeek = Math.max(1, state.week || state.display_week || state.leg || 1);
+  const weeks = [...new Set([Math.max(1, currentWeek - 1), currentWeek])];
+  const [transactionsByWeek, trendingAdds] = await Promise.all([
+    Promise.all(
+      weeks.map((week) =>
+        getJson<SleeperTransaction[]>(
+          `/league/${leagueId}/transactions/${week}`,
+          signal,
+        ),
+      ),
+    ),
+    getJson<SleeperTrendingPlayer[]>(
+      "/players/nfl/trending/add?lookback_hours=24&limit=100",
+      signal,
+    ),
+  ]);
+
+  return {
+    state,
+    transactions: transactionsByWeek.flat(),
+    trendingAdds,
+    fetchedAt: Date.now(),
+  };
 }
 
 function readPlayerCache(): PlayerCache | null {
