@@ -1,5 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { applyCors, requireMethod } from "./_lib/http.js";
+import {
+  applyCors,
+  requireMethod,
+  STATUS_CACHE_CONTROL,
+} from "./_lib/http.js";
 import { credentialsConfigured } from "./_lib/session.js";
 
 export default function handler(
@@ -9,7 +13,7 @@ export default function handler(
   if (applyCors(request, response)) return;
   if (requireMethod(request, response, ["GET"])) return;
 
-  response.setHeader("Cache-Control", "public, max-age=60, s-maxage=300");
+  response.setHeader("Cache-Control", STATUS_CACHE_CONTROL);
   response.status(200).json({
     backend: "ready",
     configured: credentialsConfigured(),
