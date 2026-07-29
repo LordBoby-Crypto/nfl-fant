@@ -6,6 +6,8 @@ const DEFAULT_ORIGINS = [
   "http://127.0.0.1:5173",
 ];
 
+export const STATUS_CACHE_CONTROL = "private, no-store";
+
 function allowedOrigins() {
   const configured = process.env.WAR_ROOM_ALLOWED_ORIGINS
     ?.split(",")
@@ -21,13 +23,13 @@ export function applyCors(
 ): boolean {
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "no-referrer");
+  response.setHeader("Vary", "Origin");
   const origin = request.headers.origin;
 
   if (origin && allowedOrigins().has(origin)) {
     response.setHeader("Access-Control-Allow-Origin", origin);
     response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
     response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    response.setHeader("Vary", "Origin");
   }
 
   if (request.method === "OPTIONS") {
