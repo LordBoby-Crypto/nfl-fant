@@ -35,6 +35,7 @@ export function useWarRoom(
   const [loggingIn, setLoggingIn] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [lastSuccessfulAt, setLastSuccessfulAt] = useState<number | null>(null);
 
   const lock = useCallback(() => {
     clearWarRoomSession();
@@ -119,6 +120,7 @@ export function useWarRoom(
 
         const nextBoard = buildPlayerBoard(responses, failures);
         setBoard(nextBoard);
+        if (responses.length) setLastSuccessfulAt(Date.now());
         const weeklyProjection = responses.find(
           (response) => response.dataset === "weekly-projections",
         );
@@ -193,5 +195,6 @@ export function useWarRoom(
     lock,
     refresh,
     sessionExpiresAt: session?.expiresAt ?? null,
+    lastSuccessfulAt,
   };
 }

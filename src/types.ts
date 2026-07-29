@@ -159,6 +159,25 @@ export interface LeagueSnapshot {
   fetchedAt: number;
 }
 
+export interface FeedTelemetry {
+  attempts: number;
+  durationMs: number;
+}
+
+export interface LeagueSnapshotTelemetry {
+  league: FeedTelemetry;
+  draft: FeedTelemetry;
+  rosters: FeedTelemetry;
+  users: FeedTelemetry;
+  totalDurationMs: number;
+}
+
+export interface DraftPickTelemetry extends FeedTelemetry {
+  received: number;
+  unique: number;
+  retained: number;
+}
+
 export interface WeeklyOutlook {
   state: NflState;
   currentWeek: number;

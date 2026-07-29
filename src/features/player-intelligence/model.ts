@@ -37,6 +37,7 @@ export interface PlayerIntelligence {
 export interface PlayerBoardData {
   players: PlayerIntelligence[];
   fetchedAt: string | null;
+  datasetFetchedAt: Partial<Record<IntelligenceDataset, string>>;
   attribution: string;
   totalExperts: number | null;
   datasetErrors: Partial<Record<IntelligenceDataset, string>>;
@@ -428,6 +429,9 @@ export function buildPlayerBoard(
   return {
     players,
     fetchedAt: newestTimestamp(responses),
+    datasetFetchedAt: Object.fromEntries(
+      responses.map((response) => [response.dataset, response.fetchedAt]),
+    ),
     attribution:
       responses.find((response) => response.attribution)?.attribution ??
       "Data obtained from FantasyPros.",

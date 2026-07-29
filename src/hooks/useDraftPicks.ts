@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { getDraftPicks } from "../services/sleeper";
-import type { SleeperDraftPick } from "../types";
+import {
+  getDraftPicksWithTelemetry,
+  reconcileDraftPicks,
+} from "../services/sleeper";
+import type { DraftPickTelemetry, SleeperDraftPick } from "../types";
 
 interface DraftPickState {
   picks: SleeperDraftPick[];
@@ -8,6 +11,9 @@ interface DraftPickState {
   loading: boolean;
   refreshing: boolean;
   fetchedAt: number | null;
+  telemetry: DraftPickTelemetry | null;
+  consecutiveErrors: number;
+  retainedAfterError: boolean;
 }
 
 export function useDraftPicks(
@@ -21,6 +27,9 @@ export function useDraftPicks(
     loading: false,
     refreshing: false,
     fetchedAt: null,
+    telemetry: null,
+    consecutiveErrors: 0,
+    retainedAfterError: false,
   });
 
   const refresh = useCallback(async (silent = false) => {
@@ -32,13 +41,24 @@ export function useDraftPicks(
       refreshing: silent ? current.refreshing : true,
     }));
     try {
-      const picks = await getDraftPicks(draftId);
-      setState({
-        picks: [...picks].sort((left, right) => left.pick_no - right.pick_no),
-        error: null,
-        loading: false,
-        refreshing: false,
-        fetchedAt: Date.now(),
+      const result = await getDraftPicksWithTelemetry(draftId);
+      setState((current) => {
+        const reconciled = reconcileDraftPicks(current.picks, result.picks);
+        return {
+          picks: reconciled.picks,
+          error: reconciled.regressed
+            ? "Sleeper returned a shorter pick list. The last complete board was retained."
+            : null,
+          loading: false,
+          refreshing: false,
+          fetchedAt: Date.now(),
+          telemetry: {
+            ...result.telemetry,
+            retained: reconciled.retained,
+          },
+          consecutiveErrors: 0,
+          retainedAfterError: reconciled.regressed,
+        };
       });
     } catch (reason) {
       setState((current) => ({
@@ -49,6 +69,8 @@ export function useDraftPicks(
             : "Sleeper draft picks could not be loaded.",
         loading: false,
         refreshing: false,
+        consecutiveErrors: current.consecutiveErrors + 1,
+        retainedAfterError: current.picks.length > 0,
       }));
     }
   }, [draftId]);
@@ -60,14 +82,25 @@ export function useDraftPicks(
       ...current,
       loading: current.fetchedAt === null,
     }));
-    getDraftPicks(draftId, controller.signal)
-      .then((picks) => {
-        setState({
-          picks: [...picks].sort((left, right) => left.pick_no - right.pick_no),
-          error: null,
-          loading: false,
-          refreshing: false,
-          fetchedAt: Date.now(),
+    getDraftPicksWithTelemetry(draftId, controller.signal)
+      .then((result) => {
+        setState((current) => {
+          const reconciled = reconcileDraftPicks(current.picks, result.picks);
+          return {
+            picks: reconciled.picks,
+            error: reconciled.regressed
+              ? "Sleeper returned a shorter pick list. The last complete board was retained."
+              : null,
+            loading: false,
+            refreshing: false,
+            fetchedAt: Date.now(),
+            telemetry: {
+              ...result.telemetry,
+              retained: reconciled.retained,
+            },
+            consecutiveErrors: 0,
+            retainedAfterError: reconciled.regressed,
+          };
         });
       })
       .catch((reason) => {
@@ -80,6 +113,8 @@ export function useDraftPicks(
               : "Sleeper draft picks could not be loaded.",
           loading: false,
           refreshing: false,
+          consecutiveErrors: current.consecutiveErrors + 1,
+          retainedAfterError: current.picks.length > 0,
         }));
       });
     return () => controller.abort();

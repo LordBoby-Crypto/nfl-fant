@@ -104,6 +104,20 @@ Milestone 9 adds:
   opponent path
 - A responsive Weekly Matchup workspace in desktop and phone navigation
 
+Milestone 10 adds:
+
+- A full green/yellow/red draft-day readiness report on the Overview screen
+- Separate Sleeper league, draft, pick, roster, user and player-feed telemetry
+- FantasyPros rankings and projection freshness based on the last real
+  upstream success, including when Vercel serves a cached provider response
+- FantasyPros-to-Sleeper match coverage across the top 350 draft-eligible
+  ranked players, with unmatched-player evidence
+- Draft date, order, rounds, timer, team count, redraft and scoring validation
+- Live private-session time remaining, browser connectivity and backend latency
+- Stale-data thresholds with exact last-success timestamps
+- Three-attempt Sleeper recovery, pick-number deduplication, and last-complete
+  pick-board retention when a failed or shorter response arrives
+
 ## Local development
 
 ```bash
@@ -134,6 +148,9 @@ lineup rebuilding, positional impact, and newly uncovered needs.
 Weekly tests cover opponent resolution, projection-driven start/sit swaps,
 starter injury escalation, deterministic playoff odds, schedule difficulty,
 and unpublished-schedule states.
+Preflight tests cover all-green readiness, missing setup blockers, slow-draft
+warnings, stale provider data, session expiration, retry success, duplicate
+pick removal, and last-complete-board retention.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 
