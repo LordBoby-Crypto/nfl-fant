@@ -21,11 +21,15 @@ const DATASETS: IntelligenceDataset[] = [
   "players",
 ];
 
-export function useWarRoom(active: boolean) {
+export function useWarRoom(
+  active: boolean,
+  weeklyProjectionWeek: number | null = null,
+) {
   const [session, setSession] = useState<WarRoomSession | null>(() =>
     readWarRoomSession(),
   );
   const [board, setBoard] = useState<PlayerBoardData | null>(null);
+  const [weeklyBoard, setWeeklyBoard] = useState<PlayerBoardData | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
@@ -36,6 +40,7 @@ export function useWarRoom(active: boolean) {
     clearWarRoomSession();
     setSession(null);
     setBoard(null);
+    setWeeklyBoard(null);
     setLoginError(null);
     setDataError(null);
   }, []);
@@ -69,9 +74,18 @@ export function useWarRoom(active: boolean) {
     setLoadingData(true);
     setDataError(null);
 
+    const requestedDatasets = weeklyProjectionWeek
+      ? [...DATASETS, "weekly-projections" as const]
+      : DATASETS;
+
     Promise.allSettled(
-      DATASETS.map((dataset) =>
-        getIntelligenceDataset(dataset, session.token, controller.signal),
+      requestedDatasets.map((dataset) =>
+        getIntelligenceDataset(
+          dataset,
+          session.token,
+          controller.signal,
+          dataset === "weekly-projections" ? weeklyProjectionWeek ?? undefined : undefined,
+        ),
       ),
     )
       .then((results) => {
@@ -80,7 +94,7 @@ export function useWarRoom(active: boolean) {
         let unauthorized = false;
 
         results.forEach((result, index) => {
-          const dataset = DATASETS[index];
+          const dataset = requestedDatasets[index];
           if (result.status === "fulfilled") {
             responses.push(result.value);
             return;
@@ -105,6 +119,44 @@ export function useWarRoom(active: boolean) {
 
         const nextBoard = buildPlayerBoard(responses, failures);
         setBoard(nextBoard);
+        const weeklyProjection = responses.find(
+          (response) => response.dataset === "weekly-projections",
+        );
+        if (weeklyProjection) {
+          const weeklyResponses: IntelligenceResponse[] = [
+            ...responses.filter(
+              (response) =>
+                response.dataset !== "projections" &&
+                response.dataset !== "weekly-projections",
+            ),
+            {
+              ...weeklyProjection,
+              dataset: "projections",
+            },
+          ];
+          const weeklyFailures = { ...failures };
+          if (failures["weekly-projections"]) {
+            weeklyFailures.projections = failures["weekly-projections"];
+          }
+          setWeeklyBoard(buildPlayerBoard(weeklyResponses, weeklyFailures));
+        } else if (weeklyProjectionWeek) {
+          const weeklyFailures = {
+            ...failures,
+            projections:
+              failures["weekly-projections"] ??
+              "Weekly projections are not published yet.",
+          };
+          setWeeklyBoard(
+            buildPlayerBoard(
+              responses.filter(
+                (response) => response.dataset !== "projections",
+              ),
+              weeklyFailures,
+            ),
+          );
+        } else {
+          setWeeklyBoard(null);
+        }
         if (!responses.length) {
           setDataError("FantasyPros did not return any player data.");
         } else if (!nextBoard.players.length) {
@@ -127,10 +179,11 @@ export function useWarRoom(active: boolean) {
       });
 
     return () => controller.abort();
-  }, [active, lock, refreshKey, session]);
+  }, [active, lock, refreshKey, session, weeklyProjectionWeek]);
 
   return {
     board,
+    weeklyBoard,
     dataError,
     isUnlocked: Boolean(session),
     loadingData,

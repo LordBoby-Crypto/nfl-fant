@@ -132,6 +132,17 @@ export interface SleeperTransaction {
   metadata: Record<string, string> | null;
 }
 
+export interface SleeperMatchup {
+  roster_id: number;
+  matchup_id: number | null;
+  points: number;
+  custom_points: number | null;
+  starters: string[];
+  players: string[];
+  starters_points?: number[];
+  players_points?: Record<string, number>;
+}
+
 export interface NflState {
   week: number;
   display_week: number;
@@ -145,5 +156,13 @@ export interface LeagueSnapshot {
   draft: Draft;
   users: LeagueUser[];
   rosters: Roster[];
+  fetchedAt: number;
+}
+
+export interface WeeklyOutlook {
+  state: NflState;
+  currentWeek: number;
+  regularSeasonWeeks: number;
+  matchupsByWeek: Record<number, SleeperMatchup[]>;
   fetchedAt: number;
 }

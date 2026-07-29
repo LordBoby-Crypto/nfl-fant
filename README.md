@@ -90,6 +90,20 @@ Milestone 8 adds:
 - Package-value and fairness evidence that supports—but does not replace—the
   roster-fit analysis
 
+Milestone 9 adds:
+
+- The current Sleeper opponent, live matchup score and projected win chance
+- Weekly FantasyPros projections kept separate from rest-of-season projections
+  for specific start/sit decisions
+- Start/sit swaps with projected point gain, confidence and a plain-language
+  reason
+- Starter-aware injury and practice alerts with a specific pre-lock action
+- Deterministic 3,000-run playoff simulations using current records, remaining
+  matchups and rest-of-season team strength
+- Remaining-schedule difficulty for every team plus the user's week-by-week
+  opponent path
+- A responsive Weekly Matchup workspace in desktop and phone navigation
+
 ## Local development
 
 ```bash
@@ -117,6 +131,9 @@ risk, depth weaknesses, and league-wide rest-of-season ranking. Waiver tests
 cover FAAB calibration, rostered-player exclusion, safe drops, open spots, and
 budget limits. Trade tests cover ownership, multi-player offers, both-team
 lineup rebuilding, positional impact, and newly uncovered needs.
+Weekly tests cover opponent resolution, projection-driven start/sit swaps,
+starter injury escalation, deterministic playoff odds, schedule difficulty,
+and unpublished-schedule states.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 

@@ -6,9 +6,11 @@ import type {
   NflState,
   Roster,
   SleeperDraftPick,
+  SleeperMatchup,
   SleeperPlayer,
   SleeperTransaction,
   SleeperTrendingPlayer,
+  WeeklyOutlook,
 } from "../types";
 
 export const LEAGUE_ID = "1387560115116208128";
@@ -90,6 +92,44 @@ export async function getWaiverActivity(
     state,
     transactions: transactionsByWeek.flat(),
     trendingAdds,
+    fetchedAt: Date.now(),
+  };
+}
+
+export async function getWeeklyOutlook(
+  leagueId: string,
+  playoffWeekStart: number,
+  signal?: AbortSignal,
+): Promise<WeeklyOutlook> {
+  const regularSeasonWeeks = Math.max(1, playoffWeekStart - 1);
+  const statePromise = getJson<NflState>("/state/nfl", signal);
+  const weeks = Array.from(
+    { length: regularSeasonWeeks },
+    (_, index) => index + 1,
+  );
+  const [state, matchups] = await Promise.all([
+    statePromise,
+    Promise.all(
+      weeks.map((week) =>
+        getJson<SleeperMatchup[]>(
+          `/league/${leagueId}/matchups/${week}`,
+          signal,
+        ),
+      ),
+    ),
+  ]);
+  const currentWeek = Math.min(
+    regularSeasonWeeks,
+    Math.max(1, state.week || state.display_week || state.leg || 1),
+  );
+
+  return {
+    state,
+    currentWeek,
+    regularSeasonWeeks,
+    matchupsByWeek: Object.fromEntries(
+      weeks.map((week, index) => [week, matchups[index]]),
+    ),
     fetchedAt: Date.now(),
   };
 }

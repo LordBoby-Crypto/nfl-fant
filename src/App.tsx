@@ -28,12 +28,14 @@ import { useLeagueSnapshot } from "./hooks/useLeagueSnapshot";
 import { useDraftPicks } from "./hooks/useDraftPicks";
 import { useIntelligenceStatus } from "./hooks/useIntelligenceStatus";
 import { useWaiverActivity } from "./hooks/useWaiverActivity";
+import { useWeeklyOutlook } from "./hooks/useWeeklyOutlook";
 import { PlayerIntelligencePage } from "./features/player-intelligence/PlayerIntelligencePage";
 import { useWarRoom } from "./features/player-intelligence/useWarRoom";
 import { LiveDraftRoom } from "./features/live-draft/LiveDraftRoom";
 import { MyTeamPage } from "./features/my-team/MyTeamPage";
 import { WaiverAssistantPage } from "./features/waivers/WaiverAssistantPage";
 import { TradeAnalyzerPage } from "./features/trades/TradeAnalyzerPage";
+import { WeeklyMatchupPage } from "./features/weekly/WeeklyMatchupPage";
 import {
   getDraftPosition,
   USERNAME,
@@ -381,13 +383,20 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { data, error, loading, refreshing, refresh } = useLeagueSnapshot();
   const intelligence = useIntelligenceStatus();
+  const weeklyOutlook = useWeeklyOutlook(
+    data?.league.league_id ?? "",
+    data?.league.settings.playoff_week_start ?? 15,
+    view === "Matchups" && Boolean(data),
+  );
   const warRoom = useWarRoom(
     view === "Draft Room" ||
       view === "Rankings" ||
       view === "Players" ||
       view === "My Team" ||
       view === "Waivers" ||
-      view === "Trades",
+      view === "Trades" ||
+      view === "Matchups",
+    view === "Matchups" ? weeklyOutlook.data?.currentWeek ?? 1 : null,
   );
   const waiverActivity = useWaiverActivity(
     data?.league.league_id ?? "",
@@ -399,7 +408,8 @@ function App() {
     view === "Draft Room" ||
       view === "My Team" ||
       view === "Waivers" ||
-      view === "Trades",
+      view === "Trades" ||
+      view === "Matchups",
   );
 
   const title = useMemo(() => {
@@ -553,6 +563,20 @@ function App() {
               warRoom.refresh();
             }}
           />
+        ) : view === "Matchups" ? (
+          <WeeklyMatchupPage
+            snapshot={data}
+            draftPicks={draftPicks}
+            warRoom={warRoom}
+            weekly={weeklyOutlook}
+            refreshing={refreshing}
+            onRefresh={() => {
+              void refresh();
+              void draftPicks.refresh();
+              weeklyOutlook.refresh();
+              warRoom.refresh();
+            }}
+          />
         ) : (
           <StatusPage
             view={view}
@@ -563,7 +587,7 @@ function App() {
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         {NAV_ITEMS.filter((item) =>
-          ["Overview", "Draft Room", "My Team", "Waivers", "Trades"].includes(
+          ["Overview", "Draft Room", "My Team", "Waivers", "Trades", "Matchups"].includes(
             item.name,
           ),
         ).map((item) => {
@@ -584,6 +608,8 @@ function App() {
                       ? "Waivers"
                     : item.name === "Trades"
                       ? "Trades"
+                    : item.name === "Matchups"
+                      ? "Matchup"
                     : item.name}
               </span>
             </button>
