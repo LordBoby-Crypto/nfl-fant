@@ -118,6 +118,21 @@ Milestone 10 adds:
 - Three-attempt Sleeper recovery, pick-number deduplication, and last-complete
   pick-board retention when a failed or shorter response arrives
 
+Milestone 11 adds:
+
+- A complete 14-team, 17-round draft-board grid with all 238 pick cells
+- Automatic position-run alerts using the latest six selections
+- Tier-break warnings based on remaining same-position players and the next
+  FantasyPros tier
+- Modeled player survival probability through KingBoby's next selection
+- Explicit **Draft now**, **Lean draft now**, and **Likely safe to wait**
+  guidance on every recommendation
+- Queue depletion alerts plus automatic detection when a queued, targeted, or
+  sleeper player is selected
+- Expected opponent selections before the next KingBoby turn, including team,
+  position, player, and confidence
+- Recommendation rank and score changes highlighted after every pick
+
 ## Local development
 
 ```bash
@@ -151,6 +166,9 @@ and unpublished-schedule states.
 Preflight tests cover all-green readiness, missing setup blockers, slow-draft
 warnings, stale provider data, session expiration, retry success, duplicate
 pick removal, and last-complete-board retention.
+Live-intelligence tests cover the complete 238-cell board, position runs, tier
+cliffs, snake-turn survival targets, wait/draft guidance, controlled-player
+losses, queue depletion, and recommendation movement.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 
