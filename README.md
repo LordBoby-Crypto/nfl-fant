@@ -71,6 +71,25 @@ Milestone 6 adds:
 - A 24-hour, reduced Sleeper player cache so the full NFL catalog is not
   downloaded on every app load
 
+Milestone 7 adds:
+
+- Ranked waiver recommendations from the real unrostered player pool
+- FAAB low, target, and high ranges calibrated to remaining budget, league bid
+  history, roster gain, positional need, injury risk, and Sleeper add momentum
+- The safest corresponding drop or an add-only recommendation for open spots
+- Search, position filters, recommendation confidence, and a phone Waivers view
+
+Milestone 8 adds:
+
+- A multi-player trade builder for every populated Sleeper roster
+- Before-and-after lineup optimization for both teams in each proposal
+- Separate ROS score, starting-lineup, bench-depth, projection, and league-rank
+  changes for each side
+- Needs solved, new weaknesses, positional-grade movement, injury warnings, and
+  a both-team verdict
+- Package-value and fairness evidence that supports—but does not replace—the
+  roster-fit analysis
+
 ## Local development
 
 ```bash
@@ -94,7 +113,10 @@ The focused draft-engine suites cover snake order, simulator slot swaps,
 redraft live turns, drafted-player removal, recommendation controls,
 opponent forecasting, repeatable simulations, all-slot plans, and simulator
 advancement. My Team tests cover lineup optimization, FLEX eligibility, injury
-risk, depth weaknesses, and league-wide rest-of-season ranking.
+risk, depth weaknesses, and league-wide rest-of-season ranking. Waiver tests
+cover FAAB calibration, rostered-player exclusion, safe drops, open spots, and
+budget limits. Trade tests cover ownership, multi-player offers, both-team
+lineup rebuilding, positional impact, and newly uncovered needs.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 

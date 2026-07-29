@@ -33,6 +33,7 @@ import { useWarRoom } from "./features/player-intelligence/useWarRoom";
 import { LiveDraftRoom } from "./features/live-draft/LiveDraftRoom";
 import { MyTeamPage } from "./features/my-team/MyTeamPage";
 import { WaiverAssistantPage } from "./features/waivers/WaiverAssistantPage";
+import { TradeAnalyzerPage } from "./features/trades/TradeAnalyzerPage";
 import {
   getDraftPosition,
   USERNAME,
@@ -51,7 +52,13 @@ type View =
   | "Matchups";
 type StatusView = Exclude<
   View,
-  "Overview" | "Draft Room" | "Rankings" | "Players" | "My Team" | "Waivers"
+  | "Overview"
+  | "Draft Room"
+  | "Rankings"
+  | "Players"
+  | "My Team"
+  | "Waivers"
+  | "Trades"
 >;
 
 const NAV_ITEMS: Array<{
@@ -329,13 +336,6 @@ function StatusPage({
     StatusView,
     { icon: typeof Activity; title: string; description: string; detail: string }
   > = {
-    Trades: {
-      icon: WalletCards,
-      title: "Trade analyzer activates after rosters exist",
-      description:
-        "Every proposal will be scored against both teams' actual needs.",
-      detail: `Trade deadline: Week ${snapshot.league.settings.trade_deadline}.`,
-    },
     Matchups: {
       icon: UsersRound,
       title: "Matchup analysis begins in Week 1",
@@ -386,7 +386,8 @@ function App() {
       view === "Rankings" ||
       view === "Players" ||
       view === "My Team" ||
-      view === "Waivers",
+      view === "Waivers" ||
+      view === "Trades",
   );
   const waiverActivity = useWaiverActivity(
     data?.league.league_id ?? "",
@@ -395,7 +396,10 @@ function App() {
   const draftPicks = useDraftPicks(
     data?.draft.draft_id ?? null,
     data?.draft.status ?? null,
-    view === "Draft Room" || view === "My Team" || view === "Waivers",
+    view === "Draft Room" ||
+      view === "My Team" ||
+      view === "Waivers" ||
+      view === "Trades",
   );
 
   const title = useMemo(() => {
@@ -537,6 +541,18 @@ function App() {
               void waiverActivity.refresh();
             }}
           />
+        ) : view === "Trades" ? (
+          <TradeAnalyzerPage
+            snapshot={data}
+            draftPicks={draftPicks}
+            warRoom={warRoom}
+            refreshing={refreshing}
+            onRefresh={() => {
+              void refresh();
+              void draftPicks.refresh();
+              warRoom.refresh();
+            }}
+          />
         ) : (
           <StatusPage
             view={view}
@@ -547,7 +563,9 @@ function App() {
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         {NAV_ITEMS.filter((item) =>
-          ["Overview", "Draft Room", "My Team", "Waivers"].includes(item.name),
+          ["Overview", "Draft Room", "My Team", "Waivers", "Trades"].includes(
+            item.name,
+          ),
         ).map((item) => {
           const Icon = item.icon;
           return (
@@ -564,6 +582,8 @@ function App() {
                     ? "Team"
                     : item.name === "Waivers"
                       ? "Waivers"
+                    : item.name === "Trades"
+                      ? "Trades"
                     : item.name}
               </span>
             </button>
