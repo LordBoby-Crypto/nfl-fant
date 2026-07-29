@@ -47,6 +47,19 @@ Milestone 4 adds:
 - A full pre-draft simulator for any practice slot while Sleeper's actual order
   remains unassigned
 
+Milestone 5 adds:
+
+- Keeper-aware turn order, player availability, roster needs, forecasts, and
+  simulations, including automatic Sleeper keepers and manual round-cost plans
+- Opponent-pick forecasting from live roster needs, ADP/ECR, and observed
+  value-versus-reach behavior, with alternatives and confidence
+- Repeatable 50, 100, or 250-run draft simulations with draft grades, common
+  roster outcomes, average position builds, and target hit rates
+- Complete round-by-round plans with named pivots for all 14 possible draft slots
+- Persistent keeper scenarios and simulation settings stored only in the
+  current browser
+- Correct next-turn calculations when future keeper picks are already reserved
+
 ## Local development
 
 ```bash
@@ -66,9 +79,10 @@ npm run build
 npm test
 ```
 
-The focused draft-engine suite covers snake order, simulator slot swaps, live
-turn calculations, drafted-player removal, recommendation controls, and
-simulator advancement.
+The focused draft-engine suites cover snake order, simulator slot swaps,
+keeper-aware live turns, drafted-player removal, recommendation controls,
+opponent forecasting, repeatable simulations, all-slot plans, and simulator
+advancement.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 
