@@ -49,16 +49,27 @@ Milestone 4 adds:
 
 Milestone 5 adds:
 
-- Keeper-aware turn order, player availability, roster needs, forecasts, and
-  simulations, including automatic Sleeper keepers and manual round-cost plans
+- Clean redraft turn order, player availability, roster needs, forecasts, and
+  simulations without carryover-player assumptions
 - Opponent-pick forecasting from live roster needs, ADP/ECR, and observed
   value-versus-reach behavior, with alternatives and confidence
 - Repeatable 50, 100, or 250-run draft simulations with draft grades, common
   roster outcomes, average position builds, and target hit rates
 - Complete round-by-round plans with named pivots for all 14 possible draft slots
-- Persistent keeper scenarios and simulation settings stored only in the
-  current browser
-- Correct next-turn calculations when future keeper picks are already reserved
+- Persistent simulation settings stored only in the current browser
+- Correct next-turn calculations when Sleeper returns sparse pick data
+
+Milestone 6 adds:
+
+- A complete My Team workspace backed by the actual Sleeper roster
+- Best-lineup optimization across every required slot, including FLEX
+- Position-by-position starter quality, coverage, and bench-depth grades
+- Prioritized roster weaknesses with specific next actions
+- Rest-of-season strength scoring and league rank across all 14 teams
+- Explicit FantasyPros rest-of-season projections (`ros=true`) rather than a
+  generic projection period
+- A 24-hour, reduced Sleeper player cache so the full NFL catalog is not
+  downloaded on every app load
 
 ## Local development
 
@@ -80,9 +91,10 @@ npm test
 ```
 
 The focused draft-engine suites cover snake order, simulator slot swaps,
-keeper-aware live turns, drafted-player removal, recommendation controls,
+redraft live turns, drafted-player removal, recommendation controls,
 opponent forecasting, repeatable simulations, all-slot plans, and simulator
-advancement.
+advancement. My Team tests cover lineup optimization, FLEX eligibility, injury
+risk, depth weaknesses, and league-wide rest-of-season ranking.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 

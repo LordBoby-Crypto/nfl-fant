@@ -3,19 +3,14 @@ import {
   useMemo,
   useRef,
   useState,
-  type FormEvent,
 } from "react";
 import {
   BarChart3,
   Bot,
   BrainCircuit,
   ChevronRight,
-  CircleAlert,
-  LockKeyhole,
-  ShieldCheck,
   Sparkles,
   Target,
-  Trash2,
 } from "lucide-react";
 import type { PlayerIntelligence } from "../player-intelligence/model";
 import type {
@@ -25,29 +20,22 @@ import type {
   SleeperDraftPick,
 } from "../../types";
 import {
-  buildTeamDraftStates,
   createSimulationSlotMap,
   getUserDraftSlot,
   type DraftControlState,
   type DraftRecommendation,
-  type TeamDraftState,
 } from "./engine";
 import {
   buildSlotDraftPlans,
-  findPlayerForPick,
   forecastOpponentPicks,
-  getUnassignedRosterKeepers,
-  mergeKeeperPicks,
   type DraftSimulationResult,
-  type KeeperMergeResult,
-  type ManualKeeper,
   type SlotDraftPlan,
 } from "./strategy";
 import type {
   DraftStrategySettings,
 } from "./useDraftStrategy";
 
-type StrategyTab = "forecast" | "simulations" | "keepers" | "plans";
+type StrategyTab = "forecast" | "simulations" | "plans";
 
 const TABS: Array<{
   id: StrategyTab;
@@ -56,13 +44,8 @@ const TABS: Array<{
 }> = [
   { id: "forecast", label: "Forecast", icon: BrainCircuit },
   { id: "simulations", label: "Simulations", icon: BarChart3 },
-  { id: "keepers", label: "Keepers", icon: ShieldCheck },
   { id: "plans", label: "14-slot plans", icon: Target },
 ];
-
-function teamName(team: TeamDraftState | undefined, rosterId: number) {
-  return team?.name ?? `Roster ${rosterId}`;
-}
 
 function ForecastPanel({
   forecast,
@@ -136,7 +119,7 @@ function SimulationPanel({
       <header className="strategy-panel-heading">
         <span>
           <h3>Monte Carlo draft test</h3>
-          <p>Opponent needs, ADP, observed style, keepers and your controls.</p>
+          <p>Opponent needs, ADP, observed style and your player controls.</p>
         </span>
         <label className="simulation-run-control">
           <span>Runs</span>
@@ -234,211 +217,6 @@ function SimulationPanel({
   );
 }
 
-function KeeperPanel({
-  draft,
-  teams,
-  board,
-  basePicks,
-  rosters,
-  keeperResult,
-  manualKeepers,
-  onAdd,
-  onRemove,
-}: {
-  draft: Draft;
-  teams: TeamDraftState[];
-  board: PlayerIntelligence[];
-  basePicks: SleeperDraftPick[];
-  rosters: Roster[];
-  keeperResult: KeeperMergeResult;
-  manualKeepers: ManualKeeper[];
-  onAdd: (keeper: Omit<ManualKeeper, "id">) => void;
-  onRemove: (id: string) => void;
-}) {
-  const [playerName, setPlayerName] = useState("");
-  const [rosterId, setRosterId] = useState(teams[0]?.rosterId ?? 1);
-  const [round, setRound] = useState(Math.min(8, draft.settings.rounds));
-  const [formError, setFormError] = useState<string | null>(null);
-  const playerByName = useMemo(
-    () =>
-      new Map(
-        board.map((player) => [
-          `${player.name} — ${player.position}, ${player.team}`.toLocaleLowerCase(),
-          player,
-        ]),
-      ),
-    [board],
-  );
-  const unassigned = useMemo(
-    () =>
-      getUnassignedRosterKeepers({
-        rosters,
-        picks: basePicks,
-        manualKeepers,
-        board,
-      }),
-    [basePicks, board, manualKeepers, rosters],
-  );
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const player =
-      playerByName.get(playerName.trim().toLocaleLowerCase()) ??
-      board.find(
-        (item) =>
-          item.name.toLocaleLowerCase() ===
-          playerName.trim().toLocaleLowerCase(),
-      );
-    if (!player) {
-      setFormError("Choose an exact player from the search suggestions.");
-      return;
-    }
-    onAdd({ playerId: player.id, rosterId, round });
-    setPlayerName("");
-    setFormError(null);
-  }
-
-  return (
-    <section className="strategy-panel keeper-panel">
-      <header className="strategy-panel-heading">
-        <span>
-          <h3>Keeper cost board</h3>
-          <p>Sleeper keepers sync automatically. Add missing round costs here.</p>
-        </span>
-        <small>{keeperResult.keeperPicks.length} applied</small>
-      </header>
-      <form className="keeper-form" onSubmit={submit}>
-        <label>
-          <span>Player</span>
-          <input
-            list="keeper-player-options"
-            value={playerName}
-            placeholder="Search player"
-            onChange={(event) => setPlayerName(event.target.value)}
-          />
-          <datalist id="keeper-player-options">
-            {board.slice(0, 350).map((player) => (
-              <option
-                key={player.id}
-                value={`${player.name} — ${player.position}, ${player.team}`}
-              />
-            ))}
-          </datalist>
-        </label>
-        <label>
-          <span>Team</span>
-          <select
-            value={rosterId}
-            onChange={(event) => setRosterId(Number(event.target.value))}
-          >
-            {teams.map((team) => (
-              <option key={team.rosterId} value={team.rosterId}>
-                {team.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Round cost</span>
-          <select
-            value={round}
-            onChange={(event) => setRound(Number(event.target.value))}
-          >
-            {Array.from({ length: draft.settings.rounds }, (_, index) => (
-              <option key={index + 1} value={index + 1}>
-                Round {index + 1}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="button primary" type="submit">
-          <LockKeyhole /> Apply keeper
-        </button>
-        {formError ? <small className="form-error">{formError}</small> : null}
-      </form>
-
-      {keeperResult.conflicts.length ? (
-        <div className="keeper-conflicts" role="alert">
-          <CircleAlert />
-          <span>
-            {keeperResult.conflicts.map((conflict) => (
-              <small key={conflict.keeperId}>{conflict.message}</small>
-            ))}
-          </span>
-        </div>
-      ) : null}
-
-      <div className="keeper-board">
-        <section>
-          <h4>Applied costs</h4>
-          {keeperResult.keeperPicks.length ? (
-            keeperResult.keeperPicks.map((pick) => {
-              const player = findPlayerForPick(pick, board);
-              const team = teams.find(
-                (item) => item.rosterId === Number(pick.roster_id),
-              );
-              const manual = manualKeepers.find(
-                (item) =>
-                  item.playerId === player?.id &&
-                  item.rosterId === Number(pick.roster_id),
-              );
-              return (
-                <article key={`${pick.pick_no}-${pick.player_id}`}>
-                  <span className={`position-mark position-${(player?.position ?? "—").toLowerCase()}`}>
-                    {player?.position ?? "—"}
-                  </span>
-                  <span>
-                    <strong>{player?.name ?? pick.player_id}</strong>
-                    <small>
-                      {teamName(team, Number(pick.roster_id))} · Round {pick.round} ·{" "}
-                      {manual ? "Manual" : "Sleeper"}
-                    </small>
-                  </span>
-                  {manual ? (
-                    <button
-                      type="button"
-                      aria-label={`Remove ${player?.name ?? "keeper"}`}
-                      onClick={() => onRemove(manual.id)}
-                    >
-                      <Trash2 />
-                    </button>
-                  ) : (
-                    <ShieldCheck />
-                  )}
-                </article>
-              );
-            })
-          ) : (
-            <p>No keeper costs are applied yet.</p>
-          )}
-        </section>
-        <section>
-          <h4>Detected without a cost</h4>
-          {unassigned.length ? (
-            unassigned.map((keeper) => (
-              <article key={`${keeper.rosterId}-${keeper.playerId}`}>
-                <CircleAlert />
-                <span>
-                  <strong>{keeper.player?.name ?? keeper.playerId}</strong>
-                  <small>
-                    {teamName(
-                      teams.find((team) => team.rosterId === keeper.rosterId),
-                      keeper.rosterId,
-                    )}{" "}
-                    · choose its round above
-                  </small>
-                </span>
-              </article>
-            ))
-          ) : (
-            <p>No unresolved Sleeper keepers.</p>
-          )}
-        </section>
-      </div>
-    </section>
-  );
-}
-
 function SlotPlansPanel({
   plans,
   selectedSlot,
@@ -454,7 +232,7 @@ function SlotPlansPanel({
       <header className="strategy-panel-heading">
         <span>
           <h3>Plan for every draft slot</h3>
-          <p>Complete round-by-round routes using current ADP, ECR and keeper costs.</p>
+          <p>Complete redraft routes using current ADP, ECR and roster construction.</p>
         </span>
         <small>All {plans.length} positions ready</small>
       </header>
@@ -498,17 +276,13 @@ function SlotPlansPanel({
                 <span>
                   <strong>{target.primary.name}</strong>
                   <small>
-                    {target.keeper
-                      ? "Locked keeper cost"
-                      : `${target.availability}% modeled availability`}
+                    {target.availability}% modeled availability
                   </small>
                 </span>
                 <em>
                   {target.alternatives.length
                     ? target.alternatives.map((player) => player.name).join(" / ")
-                    : target.keeper
-                      ? "Keeper"
-                      : "No close pivot"}
+                    : "No close pivot"}
                 </em>
               </article>
             ))}
@@ -525,15 +299,11 @@ export function DraftStrategyLab({
   rosters,
   board,
   basePicks,
-  teams,
   userRosterId,
   slotMap,
   controls,
   recommendations,
-  manualKeepers,
   simulationRuns,
-  onAddKeeper,
-  onRemoveKeeper,
   onSimulationRunsChange,
 }: {
   draft: Draft;
@@ -541,15 +311,11 @@ export function DraftStrategyLab({
   rosters: Roster[];
   board: PlayerIntelligence[];
   basePicks: SleeperDraftPick[];
-  teams: TeamDraftState[];
   userRosterId: number;
   slotMap: Record<string, number>;
   controls: DraftControlState;
   recommendations: DraftRecommendation[];
-  manualKeepers: ManualKeeper[];
   simulationRuns: DraftStrategySettings["simulationRuns"];
-  onAddKeeper: (keeper: Omit<ManualKeeper, "id">) => void;
-  onRemoveKeeper: (id: string) => void;
   onSimulationRunsChange: (
     runs: DraftStrategySettings["simulationRuns"],
   ) => void;
@@ -579,45 +345,13 @@ export function DraftStrategyLab({
         : createSimulationSlotMap(draft, userRosterId, analysisSlot),
     [analysisSlot, draft, slotMap, userRosterId],
   );
-  const keeperResult = useMemo(
-    () =>
-      mergeKeeperPicks({
-        draft,
-        picks: basePicks,
-        manualKeepers,
-        board,
-        users,
-        rosters,
-        slotMap: analysisSlotMap,
-      }),
-    [
-      analysisSlotMap,
-      basePicks,
-      board,
-      draft,
-      manualKeepers,
-      rosters,
-      users,
-    ],
-  );
-  const analysisTeams = useMemo(
-    () =>
-      buildTeamDraftStates({
-        draft,
-        users,
-        rosters,
-        picks: keeperResult.picks,
-        slotMap: analysisSlotMap,
-      }),
-    [analysisSlotMap, draft, keeperResult.picks, rosters, users],
-  );
   const forecast = useMemo(
     () =>
       forecastOpponentPicks({
         draft,
         users,
         rosters,
-        picks: keeperResult.picks,
+        picks: basePicks,
         board,
         userRosterId,
         slotMap: analysisSlotMap,
@@ -626,8 +360,8 @@ export function DraftStrategyLab({
     [
       analysisSlotMap,
       board,
+      basePicks,
       draft,
-      keeperResult.picks,
       recommendations,
       rosters,
       userRosterId,
@@ -640,10 +374,8 @@ export function DraftStrategyLab({
         draft,
         board,
         controls,
-        manualKeepers,
-        userRosterId,
       }),
-    [board, controls, draft, manualKeepers, userRosterId],
+    [board, controls, draft],
   );
 
   useEffect(
@@ -678,7 +410,7 @@ export function DraftStrategyLab({
       draft,
       users,
       rosters,
-      picks: keeperResult.picks,
+      picks: basePicks,
       board,
       userRosterId,
       slotMap: analysisSlotMap,
@@ -750,19 +482,6 @@ export function DraftStrategyLab({
             </p>
           ) : null}
         </>
-      ) : null}
-      {tab === "keepers" ? (
-        <KeeperPanel
-          draft={draft}
-          teams={analysisTeams.length ? analysisTeams : teams}
-          board={board}
-          basePicks={basePicks}
-          rosters={rosters}
-          keeperResult={keeperResult}
-          manualKeepers={manualKeepers}
-          onAdd={onAddKeeper}
-          onRemove={onRemoveKeeper}
-        />
       ) : null}
       {tab === "plans" ? (
         <SlotPlansPanel

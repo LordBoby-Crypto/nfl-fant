@@ -68,6 +68,20 @@ export interface SleeperDraftPick {
   };
 }
 
+export interface SleeperPlayer {
+  player_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  full_name: string | null;
+  position: string | null;
+  fantasy_positions: string[] | null;
+  team: string | null;
+  injury_status: string | null;
+  status: string | null;
+  age: number | null;
+  years_exp: number | null;
+}
+
 export interface LeagueUser {
   user_id: string;
   display_name: string;

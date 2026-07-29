@@ -30,9 +30,9 @@ import { useIntelligenceStatus } from "./hooks/useIntelligenceStatus";
 import { PlayerIntelligencePage } from "./features/player-intelligence/PlayerIntelligencePage";
 import { useWarRoom } from "./features/player-intelligence/useWarRoom";
 import { LiveDraftRoom } from "./features/live-draft/LiveDraftRoom";
+import { MyTeamPage } from "./features/my-team/MyTeamPage";
 import {
   getDraftPosition,
-  getUserRoster,
   USERNAME,
 } from "./services/sleeper";
 import type { LeagueSnapshot } from "./types";
@@ -47,6 +47,10 @@ type View =
   | "Waivers"
   | "Trades"
   | "Matchups";
+type StatusView = Exclude<
+  View,
+  "Overview" | "Draft Room" | "Rankings" | "Players" | "My Team"
+>;
 
 const NAV_ITEMS: Array<{
   name: View;
@@ -316,24 +320,13 @@ function StatusPage({
   view,
   snapshot,
 }: {
-  view: Exclude<View, "Overview" | "Draft Room" | "Rankings" | "Players">;
+  view: StatusView;
   snapshot: LeagueSnapshot;
 }) {
-  const roster = getUserRoster(snapshot);
-
   const content: Record<
-    Exclude<View, "Overview" | "Draft Room" | "Rankings" | "Players">,
+    StatusView,
     { icon: typeof Activity; title: string; description: string; detail: string }
   > = {
-    "My Team": {
-      icon: Shield,
-      title: `KingBoby · Roster ${roster?.roster_id ?? "—"}`,
-      description:
-        roster?.players?.length
-          ? `${roster.players.length} players are currently on your roster.`
-          : "Your 2026 roster is empty until the draft begins.",
-      detail: `${snapshot.league.roster_positions.length} total roster slots · ${snapshot.league.settings.reserve_slots} reserve slots.`,
-    },
     Waivers: {
       icon: Sparkles,
       title: "Waiver assistant activates after the draft",
@@ -394,12 +387,15 @@ function App() {
   const { data, error, loading, refreshing, refresh } = useLeagueSnapshot();
   const intelligence = useIntelligenceStatus();
   const warRoom = useWarRoom(
-    view === "Draft Room" || view === "Rankings" || view === "Players",
+    view === "Draft Room" ||
+      view === "Rankings" ||
+      view === "Players" ||
+      view === "My Team",
   );
   const draftPicks = useDraftPicks(
     data?.draft.draft_id ?? null,
     data?.draft.status ?? null,
-    view === "Draft Room",
+    view === "Draft Room" || view === "My Team",
   );
 
   const title = useMemo(() => {
@@ -517,6 +513,17 @@ function App() {
             status={intelligence.data}
             warRoom={warRoom}
           />
+        ) : view === "My Team" ? (
+          <MyTeamPage
+            snapshot={data}
+            draftPicks={draftPicks}
+            warRoom={warRoom}
+            refreshing={refreshing}
+            onRefresh={() => {
+              void refresh();
+              void draftPicks.refresh();
+            }}
+          />
         ) : (
           <StatusPage
             view={view}
@@ -526,7 +533,9 @@ function App() {
       </div>
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        {NAV_ITEMS.slice(0, 4).map((item) => {
+        {NAV_ITEMS.filter((item) =>
+          ["Overview", "Draft Room", "My Team", "Rankings"].includes(item.name),
+        ).map((item) => {
           const Icon = item.icon;
           return (
             <button
@@ -535,7 +544,13 @@ function App() {
               onClick={() => setView(item.name)}
             >
               <Icon />
-              <span>{item.name === "Draft Room" ? "Draft" : item.name}</span>
+              <span>
+                {item.name === "Draft Room"
+                  ? "Draft"
+                  : item.name === "My Team"
+                    ? "Team"
+                    : item.name}
+              </span>
             </button>
           );
         })}
