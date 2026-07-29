@@ -34,7 +34,11 @@ const DATASETS = {
 } as const;
 
 type Dataset = keyof typeof DATASETS | "weekly-projections";
-type CacheEntry = { expiresAt: number; value: unknown };
+type CacheEntry = {
+  expiresAt: number;
+  fetchedAt: string;
+  value: unknown;
+};
 
 const cache = new Map<string, CacheEntry>();
 const FANTASY_POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"] as const;
@@ -152,7 +156,7 @@ async function fetchDataset(dataset: Dataset, week: number | null) {
       ? `${dataset}:${week ?? "invalid"}`
       : dataset;
   const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (cached && cached.expiresAt > Date.now()) return cached;
 
   if (dataset === "weekly-projections") {
     if (!week) throw new Error("Choose an NFL week from 1 through 18.");
@@ -161,11 +165,13 @@ async function fetchDataset(dataset: Dataset, week: number | null) {
       `/nfl/${SEASON}/projections`,
       { scoring: "PPR", week: String(week) },
     );
-    cache.set(cacheKey, {
+    const entry: CacheEntry = {
       expiresAt: Date.now() + 60 * 60 * 1000,
+      fetchedAt: new Date().toISOString(),
       value,
-    });
-    return value;
+    };
+    cache.set(cacheKey, entry);
+    return entry;
   }
 
   const definition = DATASETS[dataset];
@@ -184,11 +190,13 @@ async function fetchDataset(dataset: Dataset, week: number | null) {
     );
   }
 
-  cache.set(cacheKey, {
+  const entry: CacheEntry = {
     expiresAt: Date.now() + definition.ttl,
+    fetchedAt: new Date().toISOString(),
     value,
-  });
-  return value;
+  };
+  cache.set(cacheKey, entry);
+  return entry;
 }
 
 export default async function handler(
@@ -231,7 +239,7 @@ export default async function handler(
   );
 
   try {
-    const data = await fetchDataset(dataset, week);
+    const entry = await fetchDataset(dataset, week);
     console.log(
       JSON.stringify({
         level: "info",
@@ -244,8 +252,8 @@ export default async function handler(
       attribution: "Data obtained from FantasyPros.",
       dataset,
       week,
-      fetchedAt: new Date().toISOString(),
-      data,
+      fetchedAt: entry.fetchedAt,
+      data: entry.value,
     });
   } catch (error) {
     console.error(

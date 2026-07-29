@@ -4,13 +4,10 @@ import {
   CalendarClock,
   Check,
   ChevronDown,
-  CircleAlert,
   ClipboardList,
   Clock3,
-  Database,
   ExternalLink,
   LayoutDashboard,
-  LockKeyhole,
   Menu,
   RefreshCw,
   Search,
@@ -36,12 +33,12 @@ import { MyTeamPage } from "./features/my-team/MyTeamPage";
 import { WaiverAssistantPage } from "./features/waivers/WaiverAssistantPage";
 import { TradeAnalyzerPage } from "./features/trades/TradeAnalyzerPage";
 import { WeeklyMatchupPage } from "./features/weekly/WeeklyMatchupPage";
+import { PreflightReport } from "./features/preflight/PreflightReport";
 import {
   getDraftPosition,
   USERNAME,
 } from "./services/sleeper";
 import type { LeagueSnapshot } from "./types";
-import type { IntelligenceStatus } from "./services/intelligence";
 
 type View =
   | "Overview"
@@ -92,40 +89,27 @@ function formatSyncTime(timestamp: number) {
   }).format(timestamp);
 }
 
-function StatusIcon({
-  complete,
-  pending = false,
-}: {
-  complete: boolean;
-  pending?: boolean;
-}) {
-  return (
-    <span
-      className={`status-icon ${complete ? "is-complete" : ""} ${pending ? "is-pending" : ""}`}
-      aria-hidden="true"
-    >
-      {complete ? <Check size={18} /> : <span>—</span>}
-    </span>
-  );
-}
-
 function Overview({
-  snapshot,
+  leagueState,
+  draftPicks,
+  intelligence,
+  warRoom,
   refreshing,
+  preflightRefreshKey,
   onRefresh,
   onOpenDraft,
-  intelligence,
 }: {
-  snapshot: LeagueSnapshot;
+  leagueState: ReturnType<typeof useLeagueSnapshot>;
+  draftPicks: ReturnType<typeof useDraftPicks>;
+  intelligence: ReturnType<typeof useIntelligenceStatus>;
+  warRoom: ReturnType<typeof useWarRoom>;
   refreshing: boolean;
+  preflightRefreshKey: number;
   onRefresh: () => void;
   onOpenDraft: () => void;
-  intelligence: {
-    data: IntelligenceStatus | null;
-    error: string | null;
-    linked: boolean;
-  };
 }) {
+  const snapshot = leagueState.data;
+  if (!snapshot) return null;
   const position = getDraftPosition(snapshot);
   const { draft, league } = snapshot;
   const isOrderPending = !position;
@@ -214,88 +198,15 @@ function Overview({
           </div>
         </section>
 
-        <section className="section-block">
-          <h2>Draft readiness</h2>
-          <div className="readiness-rail">
-            <div className="readiness-step">
-              <StatusIcon complete />
-              <span>
-                <strong>League synced</strong>
-                <small>{league.name} · {league.season}</small>
-              </span>
-            </div>
-            <div className="connector" />
-            <div className="readiness-step">
-              <StatusIcon complete />
-              <span>
-                <strong>Live draft sync ready</strong>
-                <small>Sleeper connected</small>
-              </span>
-            </div>
-            <div className="connector" />
-            <div className="readiness-step">
-              <StatusIcon complete={!isOrderPending} pending={isOrderPending} />
-              <span>
-                <strong>
-                  {isOrderPending ? "Position pending" : `Position ${position}`}
-                </strong>
-                <small>
-                  {isOrderPending ? "Draft order not set" : "Draft slot confirmed"}
-                </small>
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section className="section-block">
-          <h2>Player intelligence</h2>
-          <div className="intelligence-rail">
-            <div>
-              <Database />
-              <span>
-                <strong>FantasyPros selected</strong>
-                <small>Rankings, ADP, projections, injuries and news</small>
-              </span>
-              <StatusIcon complete />
-            </div>
-            <div>
-              <LockKeyhole />
-              <span>
-                <strong>Protected server access</strong>
-                <small>
-                  {intelligence.linked
-                    ? intelligence.error
-                      ? "Backend link needs attention"
-                      : "API key stays outside the browser"
-                    : "Backend deployment URL is not linked yet"}
-                </small>
-              </span>
-              <StatusIcon
-                complete={Boolean(intelligence.data)}
-                pending={!intelligence.data}
-              />
-            </div>
-            <div>
-              <CircleAlert />
-              <span>
-                <strong>
-                  {intelligence.data?.configured
-                    ? "Production data configured"
-                    : "FantasyPros key still required"}
-                </strong>
-                <small>
-                  {intelligence.data?.configured
-                    ? "Private data routes are ready"
-                    : "No subscription has been purchased or assumed"}
-                </small>
-              </span>
-              <StatusIcon
-                complete={Boolean(intelligence.data?.configured)}
-                pending={!intelligence.data?.configured}
-              />
-            </div>
-          </div>
-        </section>
+        <PreflightReport
+          league={leagueState}
+          draftPicks={draftPicks}
+          intelligence={intelligence}
+          warRoom={warRoom}
+          running={refreshing}
+          refreshKey={preflightRefreshKey}
+          onRun={onRefresh}
+        />
 
         <section className="section-block strategy">
           <h2>Strategy snapshot</h2>
@@ -381,7 +292,9 @@ function LoadingScreen() {
 function App() {
   const [view, setView] = useState<View>("Overview");
   const [menuOpen, setMenuOpen] = useState(false);
-  const { data, error, loading, refreshing, refresh } = useLeagueSnapshot();
+  const [preflightRefreshKey, setPreflightRefreshKey] = useState(0);
+  const league = useLeagueSnapshot();
+  const { data, error, loading, refreshing, refresh } = league;
   const intelligence = useIntelligenceStatus();
   const weeklyOutlook = useWeeklyOutlook(
     data?.league.league_id ?? "",
@@ -389,7 +302,8 @@ function App() {
     view === "Matchups" && Boolean(data),
   );
   const warRoom = useWarRoom(
-    view === "Draft Room" ||
+    view === "Overview" ||
+      view === "Draft Room" ||
       view === "Rankings" ||
       view === "Players" ||
       view === "My Team" ||
@@ -405,7 +319,8 @@ function App() {
   const draftPicks = useDraftPicks(
     data?.draft.draft_id ?? null,
     data?.draft.status ?? null,
-    view === "Draft Room" ||
+    view === "Overview" ||
+      view === "Draft Room" ||
       view === "My Team" ||
       view === "Waivers" ||
       view === "Trades" ||
@@ -502,11 +417,25 @@ function App() {
         ) : null}
         {view === "Overview" ? (
           <Overview
-            snapshot={data}
-            refreshing={refreshing}
-            onRefresh={() => void refresh()}
-            onOpenDraft={() => setView("Draft Room")}
+            leagueState={league}
+            draftPicks={draftPicks}
             intelligence={intelligence}
+            warRoom={warRoom}
+            refreshing={
+              refreshing ||
+              draftPicks.refreshing ||
+              intelligence.loading ||
+              warRoom.loadingData
+            }
+            preflightRefreshKey={preflightRefreshKey}
+            onRefresh={() => {
+              setPreflightRefreshKey((value) => value + 1);
+              void refresh();
+              void draftPicks.refresh();
+              intelligence.refresh();
+              warRoom.refresh();
+            }}
+            onOpenDraft={() => setView("Draft Room")}
           />
         ) : view === "Draft Room" ? (
           <LiveDraftRoom

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { getLeagueSnapshot } from "../services/sleeper";
-import type { LeagueSnapshot } from "../types";
+import { getLeagueSnapshotWithTelemetry } from "../services/sleeper";
+import type { LeagueSnapshot, LeagueSnapshotTelemetry } from "../types";
 
 interface SnapshotState {
   data: LeagueSnapshot | null;
   error: string | null;
   loading: boolean;
   refreshing: boolean;
+  telemetry: LeagueSnapshotTelemetry | null;
+  lastSuccessfulAt: number | null;
 }
 
 export function useLeagueSnapshot() {
@@ -15,6 +17,8 @@ export function useLeagueSnapshot() {
     error: null,
     loading: true,
     refreshing: false,
+    telemetry: null,
+    lastSuccessfulAt: null,
   });
 
   const refresh = useCallback(async (silent = false) => {
@@ -26,12 +30,14 @@ export function useLeagueSnapshot() {
     }));
 
     try {
-      const data = await getLeagueSnapshot();
+      const result = await getLeagueSnapshotWithTelemetry();
       setState({
-        data,
+        data: result.snapshot,
         error: null,
         loading: false,
         refreshing: false,
+        telemetry: result.telemetry,
+        lastSuccessfulAt: result.snapshot.fetchedAt,
       });
     } catch (error) {
       setState((current) => ({
@@ -49,13 +55,15 @@ export function useLeagueSnapshot() {
   useEffect(() => {
     const controller = new AbortController();
 
-    getLeagueSnapshot(controller.signal)
-      .then((data) => {
+    getLeagueSnapshotWithTelemetry(controller.signal)
+      .then((result) => {
         setState({
-          data,
+          data: result.snapshot,
           error: null,
           loading: false,
           refreshing: false,
+          telemetry: result.telemetry,
+          lastSuccessfulAt: result.snapshot.fetchedAt,
         });
       })
       .catch((error) => {
@@ -68,6 +76,8 @@ export function useLeagueSnapshot() {
               : "Sleeper could not be reached.",
           loading: false,
           refreshing: false,
+          telemetry: null,
+          lastSuccessfulAt: null,
         });
       });
 

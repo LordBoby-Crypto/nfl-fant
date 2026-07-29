@@ -53,6 +53,11 @@ production key included with HOF or a commercial agreement.
   remain model estimates and are never presented as provider guarantees.
 - The browser stores only the signed, expiring session token in session
   storage. The War Room password is never persisted.
+- Sleeper GET requests retry network, 429, and server failures up to
+  three times. Draft picks are reconciled by pick number and a shorter
+  transient response cannot erase the last complete local pick board.
+- Readiness freshness uses the original successful FantasyPros fetch time, not
+  the time a cached Vercel response was returned to the browser.
 - FantasyPros attribution must be displayed anywhere provider data appears.
 
 Official references:
