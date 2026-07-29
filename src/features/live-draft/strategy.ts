@@ -19,33 +19,8 @@ import {
   recommendPlayers,
   type DraftControlState,
   type DraftPosition,
-  type KeeperAssignment,
   type TeamDraftState,
 } from "./engine.ts";
-
-export interface ManualKeeper {
-  id: string;
-  playerId: string;
-  rosterId: number;
-  round: number | null;
-}
-
-export interface KeeperConflict {
-  keeperId: string;
-  message: string;
-}
-
-export interface KeeperMergeResult {
-  picks: SleeperDraftPick[];
-  keeperPicks: SleeperDraftPick[];
-  conflicts: KeeperConflict[];
-}
-
-export interface UnassignedKeeper {
-  rosterId: number;
-  playerId: string;
-  player: PlayerIntelligence | null;
-}
 
 export interface OpponentForecast {
   pickNumber: number;
@@ -95,7 +70,6 @@ export interface SlotDraftTarget {
   primary: PlayerIntelligence;
   alternatives: PlayerIntelligence[];
   availability: number;
-  keeper: boolean;
 }
 
 export interface SlotDraftPlan {
@@ -131,7 +105,6 @@ export interface OpponentPickForecast {
 export interface SlotPlanRound {
   round: number;
   pickNumber: number;
-  keeper: KeeperAssignment | null;
   focus: DraftPosition[];
   targets: Array<{
     player: PlayerIntelligence;
@@ -229,254 +202,6 @@ export function getRosterSlot(
   return match ? Number(match[0]) : null;
 }
 
-export function buildKeeperAssignments({
-  draft,
-  picks,
-  board,
-  manualKeepers,
-  slotMap = draft.slot_to_roster_id,
-}: {
-  draft: Draft;
-  picks: SleeperDraftPick[];
-  board: PlayerIntelligence[];
-  manualKeepers: ManualKeeper[];
-  slotMap?: Record<string, number>;
-}) {
-  const lookup = playerLookup(board);
-  const sleeper = picks
-    .filter((pick) => pick.is_keeper === true)
-    .flatMap((pick): KeeperAssignment[] => {
-      const matched =
-        lookup.byId.get(String(pick.player_id)) ??
-        lookup.byName.get(normalizePlayerName(pickPlayerName(pick)));
-      const position = matched?.position ?? pickPosition(pick);
-      if (!position || position === "—") return [];
-      return [{
-        id: `sleeper-${pick.pick_no}-${pick.player_id}`,
-        playerId: matched?.id ?? String(pick.player_id),
-        name: matched?.name ?? pickPlayerName(pick),
-        position,
-        rosterId: Number(pick.roster_id),
-        round: Number(pick.round) || null,
-        pickNumber: Number(pick.pick_no) || null,
-        source: "sleeper",
-      }];
-    });
-
-  const usedPlayers = new Set(
-    sleeper.flatMap((keeper) => [
-      String(keeper.playerId),
-      normalizePlayerName(keeper.name),
-    ]),
-  );
-  const manual = manualKeepers.flatMap((keeper): KeeperAssignment[] => {
-    const player = lookup.byId.get(String(keeper.playerId));
-    if (
-      !player ||
-      player.position === "—" ||
-      usedPlayers.has(String(player.id)) ||
-      usedPlayers.has(normalizePlayerName(player.name))
-    ) {
-      return [];
-    }
-    const slot = getRosterSlot(slotMap, keeper.rosterId);
-    const round =
-      keeper.round === null
-        ? null
-        : Math.min(draft.settings.rounds, Math.max(1, keeper.round));
-    const assignment: KeeperAssignment = {
-      id: keeper.id,
-      playerId: player.id,
-      name: player.name,
-      position: player.position,
-      rosterId: keeper.rosterId,
-      round,
-      pickNumber:
-        round && slot
-          ? getPickNumberForRoundSlot(
-              round,
-              slot,
-              draft.settings.teams,
-              draft.type,
-            )
-          : null,
-      source: "manual",
-    };
-    usedPlayers.add(String(player.id));
-    usedPlayers.add(normalizePlayerName(player.name));
-    return [assignment];
-  });
-
-  return [...sleeper, ...manual].sort((left, right) => {
-    if (left.pickNumber === null) return 1;
-    if (right.pickNumber === null) return -1;
-    return left.pickNumber - right.pickNumber;
-  });
-}
-
-export function applyManualKeeperPicks({
-  draft,
-  picks,
-  keepers,
-  users,
-  rosters,
-}: {
-  draft: Draft;
-  picks: SleeperDraftPick[];
-  keepers: KeeperAssignment[];
-  users: LeagueUser[];
-  rosters: Roster[];
-}) {
-  const next = [...picks];
-  const occupiedPicks = new Set(next.map((pick) => Number(pick.pick_no)));
-  const occupiedPlayers = new Set(
-    next.flatMap((pick) => [
-      String(pick.player_id),
-      normalizePlayerName(pickPlayerName(pick)),
-    ]),
-  );
-  const ownerByRoster = new Map(
-    rosters.map((roster) => [roster.roster_id, roster.owner_id]),
-  );
-  const knownUsers = new Set(users.map((user) => user.user_id));
-
-  for (const keeper of keepers) {
-    if (
-      keeper.source !== "manual" ||
-      keeper.pickNumber === null ||
-      occupiedPicks.has(keeper.pickNumber) ||
-      occupiedPlayers.has(String(keeper.playerId)) ||
-      occupiedPlayers.has(normalizePlayerName(keeper.name))
-    ) {
-      continue;
-    }
-    const rosterOwner = ownerByRoster.get(keeper.rosterId) ?? "";
-    const ownerId = knownUsers.has(rosterOwner) ? rosterOwner : "";
-    next.push({
-      ...createSimulatedPick({
-        draft,
-        pickNumber: keeper.pickNumber,
-        player: {
-          id: keeper.playerId,
-          name: keeper.name,
-          position: keeper.position,
-          team: "—",
-          positionRank: "",
-          ecr: null,
-          tier: null,
-          adp: null,
-          projectedPoints: null,
-          expertBest: null,
-          expertWorst: null,
-          expertAverage: null,
-          injuryStatus: "",
-          injuryDetail: "",
-          practiceStatus: "",
-          byeWeek: null,
-          news: [],
-        },
-        rosterId: keeper.rosterId,
-        ownerId,
-      }),
-      is_keeper: true,
-    });
-    occupiedPicks.add(keeper.pickNumber);
-    occupiedPlayers.add(String(keeper.playerId));
-    occupiedPlayers.add(normalizePlayerName(keeper.name));
-  }
-
-  return next.sort((left, right) => left.pick_no - right.pick_no);
-}
-
-export function mergeKeeperPicks({
-  draft,
-  picks,
-  manualKeepers,
-  board,
-  users,
-  rosters,
-  slotMap,
-}: {
-  draft: Draft;
-  picks: SleeperDraftPick[];
-  manualKeepers: ManualKeeper[];
-  board: PlayerIntelligence[];
-  users: LeagueUser[];
-  rosters: Roster[];
-  slotMap: Record<string, number>;
-}): KeeperMergeResult {
-  const assignments = buildKeeperAssignments({
-    draft,
-    picks,
-    board,
-    manualKeepers,
-    slotMap,
-  });
-  const conflicts: KeeperConflict[] = [];
-  const occupiedPicks = new Map(
-    picks.map((pick) => [Number(pick.pick_no), pick]),
-  );
-  for (const assignment of assignments) {
-    if (assignment.source !== "manual") continue;
-    if (assignment.round === null || assignment.pickNumber === null) {
-      conflicts.push({
-        keeperId: assignment.id,
-        message: "Assign a draft slot and round before applying this keeper.",
-      });
-      continue;
-    }
-    const occupied = occupiedPicks.get(assignment.pickNumber);
-    if (occupied) {
-      conflicts.push({
-        keeperId: assignment.id,
-        message: `Pick ${assignment.pickNumber} is already occupied by ${pickPlayerName(occupied)}.`,
-      });
-    }
-  }
-  const merged = applyManualKeeperPicks({
-    draft,
-    picks,
-    keepers: assignments,
-    users,
-    rosters,
-  });
-  return {
-    picks: merged,
-    keeperPicks: merged.filter((pick) => pick.is_keeper === true),
-    conflicts,
-  };
-}
-
-export function getUnassignedRosterKeepers({
-  rosters,
-  picks,
-  manualKeepers,
-  board,
-}: {
-  rosters: Roster[];
-  picks: SleeperDraftPick[];
-  manualKeepers: ManualKeeper[];
-  board: PlayerIntelligence[];
-}) {
-  const represented = new Set([
-    ...picks.filter((pick) => pick.is_keeper).map((pick) => String(pick.player_id)),
-    ...manualKeepers.map((keeper) => keeper.playerId),
-  ]);
-  const lookup = playerLookup(board);
-  const result: UnassignedKeeper[] = [];
-  for (const roster of rosters) {
-    for (const playerId of roster.keepers ?? []) {
-      if (represented.has(String(playerId))) continue;
-      result.push({
-        rosterId: roster.roster_id,
-        playerId: String(playerId),
-        player: lookup.byId.get(String(playerId)) ?? null,
-      });
-    }
-  }
-  return result;
-}
-
 function getOpponentProfile(team: TeamDraftState) {
   const base = ARCHETYPES[Math.abs(team.rosterId) % ARCHETYPES.length];
   const observedBias: Partial<Record<DraftPosition, number>> = {};
@@ -525,7 +250,6 @@ function simulateOpponentSelections({
   rosters,
   picks,
   board,
-  keepers,
   userRosterId,
   slotMap,
   seed,
@@ -536,7 +260,6 @@ function simulateOpponentSelections({
   rosters: Roster[];
   picks: SleeperDraftPick[];
   board: PlayerIntelligence[];
-  keepers: KeeperAssignment[];
   userRosterId: number;
   slotMap: Record<string, number>;
   seed: number;
@@ -558,10 +281,9 @@ function simulateOpponentSelections({
       rosters,
       picks: nextPicks,
       slotMap,
-      keepers,
     });
     const team = teams.find((item) => item.rosterId === cursor.currentRosterId);
-    const pool = availablePlayers(board, nextPicks, keepers);
+    const pool = availablePlayers(board, nextPicks);
     if (!team || !pool.length) break;
     const player = chooseOpponentPlayer({
       available: pool,
@@ -592,7 +314,6 @@ export function simulateToUserTurnWithForecast({
   rosters: Roster[];
   picks: SleeperDraftPick[];
   board: PlayerIntelligence[];
-  keepers: KeeperAssignment[];
   userRosterId: number;
   slotMap: Record<string, number>;
   scenario: number;
@@ -616,7 +337,6 @@ function forecastOpponentPickProbabilities({
   rosters: Roster[];
   picks: SleeperDraftPick[];
   board: PlayerIntelligence[];
-  keepers: KeeperAssignment[];
   userRosterId: number;
   slotMap: Record<string, number>;
   runs?: number;
@@ -630,7 +350,6 @@ function forecastOpponentPickProbabilities({
     rosters: input.rosters,
     picks: input.picks,
     slotMap: input.slotMap,
-    keepers: input.keepers,
   });
 
   for (let run = 0; run < runs; run += 1) {
@@ -747,7 +466,6 @@ export function forecastOpponentPicks({
     rosters,
     picks: working,
     board,
-    keepers: [],
     userRosterId,
     slotMap,
     runs: 160,
@@ -854,28 +572,12 @@ function roundInstruction(
 export function buildAllSlotPlans({
   draft,
   board,
-  keepers,
-  userRosterId,
 }: {
   draft: Draft;
   board: PlayerIntelligence[];
-  keepers: KeeperAssignment[];
-  userRosterId: number;
 }) {
-  const reserved = new Set(
-    keepers.flatMap((keeper) => [
-      String(keeper.playerId),
-      normalizePlayerName(keeper.name),
-    ]),
-  );
   const pool = board.filter(
-    (player) =>
-      player.position !== "—" &&
-      !reserved.has(String(player.id)) &&
-      !reserved.has(normalizePlayerName(player.name)),
-  );
-  const userKeepers = keepers.filter(
-    (keeper) => keeper.rosterId === userRosterId,
+    (player) => player.position !== "—",
   );
 
   return Array.from({ length: draft.settings.teams }, (_, slotIndex) => {
@@ -889,7 +591,6 @@ export function buildAllSlotPlans({
       DST: 0,
     };
     const used = new Set<string>();
-    for (const keeper of userKeepers) counts[keeper.position] += 1;
     const rounds: SlotPlanRound[] = [];
     let confidenceTotal = 0;
     let gradeTotal = 0;
@@ -901,21 +602,6 @@ export function buildAllSlotPlans({
         draft.settings.teams,
         draft.type,
       );
-      const keeper =
-        userKeepers.find((candidate) => candidate.round === round) ?? null;
-      if (keeper) {
-        rounds.push({
-          round,
-          pickNumber,
-          keeper,
-          focus: [keeper.position],
-          targets: [],
-          fallback: "Keeper cost is locked into this selection.",
-          instruction: `${keeper.name} occupies this round at pick ${pickNumber}.`,
-        });
-        continue;
-      }
-
       const candidates = pool
         .filter((player) => !used.has(player.id))
         .map((player) => ({
@@ -966,7 +652,6 @@ export function buildAllSlotPlans({
       rounds.push({
         round,
         pickNumber,
-        keeper: null,
         focus,
         targets,
         fallback:
@@ -978,15 +663,14 @@ export function buildAllSlotPlans({
     }
 
     const openingBuild = rounds
-      .filter((round) => !round.keeper)
       .slice(0, 4)
       .map((round) => round.focus[0] ?? "VALUE")
       .join(" · ");
-    const nonKeeperRounds = Math.max(1, rounds.filter((round) => !round.keeper).length);
+    const plannedRounds = Math.max(1, rounds.length);
     return {
       slot,
-      grade: Math.round(Math.min(99, 55 + gradeTotal / Math.max(70, nonKeeperRounds * 24))),
-      confidence: Math.round((confidenceTotal / nonKeeperRounds) * 100),
+      grade: Math.round(Math.min(99, 55 + gradeTotal / Math.max(70, plannedRounds * 24))),
+      confidence: Math.round((confidenceTotal / plannedRounds) * 100),
       openingBuild,
       firstPick: getPickNumberForRoundSlot(1, slot, draft.settings.teams, draft.type),
       secondPick:
@@ -1002,40 +686,19 @@ export function buildSlotDraftPlans({
   draft,
   board,
   controls,
-  manualKeepers,
-  userRosterId,
 }: {
   draft: Draft;
   board: PlayerIntelligence[];
   controls: DraftControlState;
-  manualKeepers: ManualKeeper[];
-  userRosterId: number;
 }) {
-  const lookup = playerLookup(board);
   const preferred = new Set([
     ...controls.target,
     ...controls.queue,
     ...controls.sleeper,
   ]);
-  const keepers = manualKeepers.flatMap((keeper): KeeperAssignment[] => {
-    const player = lookup.byId.get(keeper.playerId);
-    if (!player || player.position === "—") return [];
-    return [{
-      id: keeper.id,
-      playerId: player.id,
-      name: player.name,
-      position: player.position,
-      rosterId: keeper.rosterId,
-      round: keeper.round,
-      pickNumber: null,
-      source: "manual",
-    }];
-  });
   return buildAllSlotPlans({
     draft,
     board,
-    keepers,
-    userRosterId,
   }).map((plan): SlotDraftPlan => {
     const edgeDistance = Math.min(
       plan.slot - 1,
@@ -1048,19 +711,6 @@ export function buildSlotDraftPlans({
           ? "Moderate turn"
           : "Short turn";
     const targets = plan.rounds.flatMap((round): SlotDraftTarget[] => {
-        if (round.keeper) {
-          const player = lookup.byId.get(round.keeper.playerId);
-          return player
-            ? [{
-                round: round.round,
-                pickNumber: round.pickNumber,
-                primary: player,
-                alternatives: [],
-                availability: 100,
-                keeper: true,
-              }]
-            : [];
-        }
         const orderedTargets = [...round.targets].sort((left, right) => {
           const preference =
             Number(preferred.has(right.player.id)) -
@@ -1077,7 +727,6 @@ export function buildSlotDraftPlans({
             .slice(1, 3)
             .map((target) => target.player),
           availability: Math.round(primary.availability * 100),
-          keeper: false,
         }];
       });
     return {
@@ -1384,7 +1033,6 @@ export function runDraftSimulationsDetailed({
         const selections = simulateOpponentSelections({
           ...input,
           picks,
-          keepers: [],
           seed: 91_919 + run * 10_007 + cursor.currentPick * 97,
           horizon: 1,
         });
@@ -1460,37 +1108,14 @@ export function buildSlotDraftPlansWithPreferences({
   draft,
   board,
   controls,
-  manualKeepers,
-  userRosterId,
 }: {
   draft: Draft;
   board: PlayerIntelligence[];
   controls: DraftControlState;
-  manualKeepers: ManualKeeper[];
-  userRosterId: number;
 }): SlotDraftPlan[] {
-  const lookup = playerLookup(board);
-  const keeperAssignments = manualKeepers.flatMap(
-    (keeper): KeeperAssignment[] => {
-      const player = lookup.byId.get(String(keeper.playerId));
-      if (!player || player.position === "—") return [];
-      return [{
-        id: keeper.id,
-        playerId: player.id,
-        name: player.name,
-        position: player.position,
-        rosterId: keeper.rosterId,
-        round: keeper.round,
-        pickNumber: null,
-        source: "manual",
-      }];
-    },
-  );
   const detailed = buildAllSlotPlans({
     draft,
     board,
-    keepers: keeperAssignments,
-    userRosterId,
   });
   const preferred = new Set([
     ...controls.target,
@@ -1500,16 +1125,13 @@ export function buildSlotDraftPlansWithPreferences({
 
   return detailed.map((plan) => {
     const targets = plan.rounds.slice(0, 6).flatMap((round): SlotDraftTarget[] => {
-      const keeperPlayer = round.keeper
-        ? lookup.byId.get(round.keeper.playerId)
-        : null;
       const orderedTargets = [...round.targets].sort((left, right) => {
         const preference =
           Number(preferred.has(right.player.id)) -
           Number(preferred.has(left.player.id));
         return preference || right.availability - left.availability;
       });
-      const primary = keeperPlayer ?? orderedTargets[0]?.player;
+      const primary = orderedTargets[0]?.player;
       if (!primary) return [];
       return [{
         round: round.round,
@@ -1519,10 +1141,7 @@ export function buildSlotDraftPlansWithPreferences({
           .map((target) => target.player)
           .filter((player) => player.id !== primary.id)
           .slice(0, 2),
-        availability: round.keeper
-          ? 100
-          : Math.round((orderedTargets[0]?.availability ?? 0) * 100),
-        keeper: Boolean(round.keeper),
+        availability: Math.round((orderedTargets[0]?.availability ?? 0) * 100),
       }];
     });
     const confidence = plan.confidence;

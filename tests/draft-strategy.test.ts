@@ -9,7 +9,6 @@ import {
 import {
   buildSlotDraftPlans,
   forecastOpponentPicks,
-  mergeKeeperPicks,
   runDraftSimulations,
 } from "../src/features/live-draft/strategy.ts";
 import type { PlayerIntelligence } from "../src/features/player-intelligence/model.ts";
@@ -119,26 +118,26 @@ const controls = {
   avoid: [],
 };
 
-test("keeper-aware cursor finds the first open pick instead of using array length", () => {
-  const futureKeeper = {
+test("sparse draft data finds the first open pick instead of using array length", () => {
+  const futurePick = {
     player_id: "8",
     picked_by: "u2",
     roster_id: 2,
     round: 2,
     draft_slot: 2,
     pick_no: 7,
-    is_keeper: true,
+    is_keeper: false,
     metadata: {
       first_name: "Player",
       last_name: "8",
       position: "WR",
     },
   } satisfies SleeperDraftPick;
-  assert.equal(getDraftCursor(draft, [futureKeeper], 2).currentPick, 1);
-  assert.equal(availablePlayers(board, [futureKeeper]).some((item) => item.id === "8"), false);
+  assert.equal(getDraftCursor(draft, [futurePick], 2).currentPick, 1);
+  assert.equal(availablePlayers(board, [futurePick]).some((item) => item.id === "8"), false);
 
   const firstSixPicks = Array.from({ length: 6 }, (_, index) => ({
-    ...futureKeeper,
+    ...futurePick,
     player_id: String(index + 1),
     roster_id: (index % 4) + 1,
     round: Math.floor(index / 4) + 1,
@@ -146,32 +145,13 @@ test("keeper-aware cursor finds the first open pick instead of using array lengt
     pick_no: index + 1,
     is_keeper: false,
   }));
-  const afterKeeperCost = getDraftCursor(
+  const afterSparsePick = getDraftCursor(
     draft,
-    [...firstSixPicks, futureKeeper],
+    [...firstSixPicks, futurePick],
     2,
   );
-  assert.equal(afterKeeperCost.currentPick, 8);
-  assert.equal(afterKeeperCost.nextUserPick, 10);
-});
-
-test("manual keeper costs occupy the correct snake pick", () => {
-  assert.equal(getPickNumberForRoundSlot(2, 2, 4, "snake"), 7);
-  const result = mergeKeeperPicks({
-    draft,
-    picks: [],
-    manualKeepers: [
-      { id: "keeper", playerId: "8", rosterId: 2, round: 2 },
-    ],
-    board,
-    users,
-    rosters,
-    slotMap: draft.slot_to_roster_id,
-  });
-  assert.equal(result.conflicts.length, 0);
-  assert.equal(result.keeperPicks.length, 1);
-  assert.equal(result.keeperPicks[0].pick_no, 7);
-  assert.equal(result.keeperPicks[0].is_keeper, true);
+  assert.equal(afterSparsePick.currentPick, 8);
+  assert.equal(afterSparsePick.nextUserPick, 10);
 });
 
 test("opponent forecast models each selection before the user's turn", () => {
@@ -215,15 +195,11 @@ test("Monte Carlo simulations are repeatable for a fixed seed", () => {
   assert.equal(first.averageGrade >= 0 && first.averageGrade <= 100, true);
 });
 
-test("every draft slot receives a keeper-aware opening plan", () => {
+test("every draft slot receives a clean redraft opening plan", () => {
   const plans = buildSlotDraftPlans({
     draft,
     board,
     controls,
-    manualKeepers: [
-      { id: "keeper", playerId: "8", rosterId: 2, round: 2 },
-    ],
-    userRosterId: 2,
   });
   assert.equal(plans.length, 4);
   assert.deepEqual(
@@ -232,8 +208,6 @@ test("every draft slot receives a keeper-aware opening plan", () => {
   );
   for (const plan of plans) {
     assert.equal(plan.targets.length, 3);
-    assert.equal(plan.targets[1].primary.id, "8");
-    assert.equal(plan.targets[1].keeper, true);
     assert.equal(
       plan.targets[1].pickNumber,
       getPickNumberForRoundSlot(2, plan.slot, 4, "snake"),
@@ -260,8 +234,6 @@ test("the production 14-team shape receives all fourteen snake plans", () => {
     draft: fourteenTeamDraft,
     board,
     controls,
-    manualKeepers: [],
-    userRosterId: 2,
   });
   assert.equal(plans.length, 14);
   assert.equal(plans[13].slot, 14);

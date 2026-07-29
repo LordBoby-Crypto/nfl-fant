@@ -13,7 +13,7 @@ const DATASETS = {
   },
   projections: {
     path: `/nfl/${SEASON}/projections`,
-    params: { scoring: "PPR" },
+    params: { scoring: "PPR", ros: "true" },
     ttl: 6 * 60 * 60 * 1000,
   },
   injuries: {

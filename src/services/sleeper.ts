@@ -5,6 +5,7 @@ import type {
   LeagueUser,
   Roster,
   SleeperDraftPick,
+  SleeperPlayer,
 } from "../types";
 
 export const LEAGUE_ID = "1387560115116208128";
@@ -12,6 +13,13 @@ export const USER_ID = "1340097308699664384";
 export const USERNAME = "kingboby";
 
 const API_ROOT = "https://api.sleeper.app/v1";
+const PLAYER_CACHE_KEY = "war-room.sleeper-players.v1";
+const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+interface PlayerCache {
+  fetchedAt: number;
+  players: Record<string, SleeperPlayer>;
+}
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${API_ROOT}${path}`, {
@@ -51,6 +59,62 @@ export async function getDraftPicks(
   signal?: AbortSignal,
 ): Promise<SleeperDraftPick[]> {
   return getJson<SleeperDraftPick[]>(`/draft/${draftId}/picks`, signal);
+}
+
+function readPlayerCache(): PlayerCache | null {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(PLAYER_CACHE_KEY) ?? "null",
+    ) as PlayerCache | null;
+    return value &&
+      typeof value.fetchedAt === "number" &&
+      value.players &&
+      typeof value.players === "object"
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getSleeperPlayersByIds(
+  playerIds: string[],
+  signal?: AbortSignal,
+) {
+  const ids = [...new Set(playerIds.map(String).filter(Boolean))];
+  if (!ids.length) return {};
+
+  const cached = readPlayerCache();
+  const cacheIsFresh =
+    cached && Date.now() - cached.fetchedAt < PLAYER_CACHE_TTL;
+  if (cacheIsFresh && ids.every((id) => cached.players[id])) {
+    return Object.fromEntries(
+      ids.flatMap((id) => cached.players[id] ? [[id, cached.players[id]]] : []),
+    );
+  }
+
+  const catalog = await getJson<Record<string, SleeperPlayer>>(
+    "/players/nfl",
+    signal,
+  );
+  const selected = Object.fromEntries(
+    ids.flatMap((id) => catalog[id] ? [[id, catalog[id]]] : []),
+  );
+  try {
+    localStorage.setItem(
+      PLAYER_CACHE_KEY,
+      JSON.stringify({
+        fetchedAt: Date.now(),
+        players: {
+          ...(cached?.players ?? {}),
+          ...selected,
+        },
+      } satisfies PlayerCache),
+    );
+  } catch {
+    // The analysis still works when browser storage is unavailable or full.
+  }
+  return selected;
 }
 
 export function getUserRoster(snapshot: LeagueSnapshot): Roster | undefined {
