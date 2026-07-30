@@ -499,7 +499,10 @@ export function recommendPlayers({
   }
 
   return available
-    .filter((player) => player.position !== "—")
+    .filter(
+      (player) =>
+        player.position !== "—" && !controls.avoid.includes(player.id),
+    )
     .map((player): DraftRecommendation => {
       const vor = replacementValue(player, available, teams);
       const scarcity = scarcityValue(player, available, cursor.picksUntilUser);
@@ -525,8 +528,6 @@ export function recommendPlayers({
       if (controls.sleeper.includes(player.id)) score += 9;
       const queueIndex = controls.queue.indexOf(player.id);
       if (queueIndex >= 0) score += Math.max(8, 24 - queueIndex * 3);
-      if (controls.avoid.includes(player.id)) score -= 1_000;
-
       const exactNeed = userTeam.needs.find(
         (need) => need.position === player.position,
       );

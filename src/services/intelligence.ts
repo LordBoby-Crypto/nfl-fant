@@ -1,3 +1,5 @@
+import { validateWarRoomSession } from "./sessionState";
+
 export interface IntelligenceStatus {
   backend: "ready";
   configured: boolean;
@@ -88,21 +90,12 @@ export function readWarRoomSession(): WarRoomSession | null {
   try {
     const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!stored) return null;
-    const session = JSON.parse(stored) as Partial<WarRoomSession>;
-
-    if (
-      typeof session.token !== "string" ||
-      typeof session.expiresAt !== "number" ||
-      session.expiresAt <= Date.now()
-    ) {
+    const session = validateWarRoomSession(JSON.parse(stored));
+    if (!session) {
       sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return null;
     }
-
-    return {
-      token: session.token,
-      expiresAt: session.expiresAt,
-    };
+    return session;
   } catch {
     sessionStorage.removeItem(SESSION_STORAGE_KEY);
     return null;

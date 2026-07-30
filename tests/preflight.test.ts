@@ -230,6 +230,21 @@ test("pick reconciliation removes duplicates and retains a complete board on reg
   assert.deepEqual(reconciled.picks, previous);
 });
 
+test("pick reconciliation fills a missing middle pick after reconnect", () => {
+  const previous = [pick(1), pick(2), pick(3)];
+  const reconciled = reconcileDraftPicks(previous, [
+    pick(1),
+    pick(3),
+    pick(4),
+  ]);
+  assert.equal(reconciled.regressed, true);
+  assert.equal(reconciled.retained, 1);
+  assert.deepEqual(
+    reconciled.picks.map((item) => item.pick_no),
+    [1, 2, 3, 4],
+  );
+});
+
 test("FantasyPros match coverage resolves Sleeper IDs by normalized name and position", () => {
   const fantasyPros = [
     {

@@ -165,19 +165,34 @@ export function reconcileDraftPicks(
 ) {
   const stablePrevious = deduplicateDraftPicks(previous);
   const stableIncoming = deduplicateDraftPicks(incoming);
-  const previousLast = stablePrevious.at(-1)?.pick_no ?? 0;
-  const incomingLast = stableIncoming.at(-1)?.pick_no ?? 0;
-
-  if (
-    stablePrevious.length &&
-    (stableIncoming.length < stablePrevious.length || incomingLast < previousLast)
-  ) {
+  if (!stablePrevious.length) {
     return {
-      picks: stablePrevious,
-      retained: stablePrevious.length - stableIncoming.length,
+      picks: stableIncoming,
+      retained: 0,
+      regressed: false,
+    };
+  }
+
+  const incomingByPick = new Map(
+    stableIncoming.map((pick) => [pick.pick_no, pick] as const),
+  );
+  const missingPrevious = stablePrevious.filter(
+    (pick) => !incomingByPick.has(pick.pick_no),
+  );
+  if (missingPrevious.length) {
+    const merged = new Map(
+      stablePrevious.map((pick) => [pick.pick_no, pick] as const),
+    );
+    for (const pick of stableIncoming) merged.set(pick.pick_no, pick);
+    return {
+      picks: [...merged.values()].sort(
+        (left, right) => left.pick_no - right.pick_no,
+      ),
+      retained: missingPrevious.length,
       regressed: true,
     };
   }
+
   return {
     picks: stableIncoming,
     retained: 0,
