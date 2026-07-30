@@ -2,8 +2,26 @@ import type {
   IntelligenceDataset,
   IntelligenceResponse,
 } from "../../services/intelligence";
+import {
+  buildLeagueScoringBoard,
+  type LeagueScoringContext,
+  type ScoringCategoryCoverage,
+  type ScoringConfidence,
+  type ScoringFormulaTerm,
+} from "./scoring.ts";
 
-export type PlayerPosition = "QB" | "RB" | "WR" | "TE" | "K" | "DST" | "—";
+export type PlayerPosition =
+  | "QB"
+  | "RB"
+  | "WR"
+  | "TE"
+  | "K"
+  | "DST"
+  | "DL"
+  | "LB"
+  | "DB"
+  | "IDP"
+  | "—";
 
 export interface PlayerNewsItem {
   id: string;
@@ -24,6 +42,22 @@ export interface PlayerIntelligence {
   tier: number | null;
   adp: number | null;
   projectedPoints: number | null;
+  providerProjectedPoints?: number | null;
+  projectionStats?: Record<string, number>;
+  leagueRank?: number | null;
+  leaguePositionRank?: number | null;
+  leagueTier?: number | null;
+  replacementValue?: number | null;
+  scarcityAdjustedValue?: number | null;
+  scoringConfidence?: ScoringConfidence;
+  scoringCoverage?: number;
+  scoringFormula?: ScoringFormulaTerm[];
+  scoringWarnings?: string[];
+  leagueScoringMode?:
+    | "rebuilt"
+    | "partially-rebuilt"
+    | "provider-fallback"
+    | "unavailable";
   expertBest: number | null;
   expertWorst: number | null;
   expertAverage: number | null;
@@ -41,6 +75,11 @@ export interface PlayerBoardData {
   attribution: string;
   totalExperts: number | null;
   datasetErrors: Partial<Record<IntelligenceDataset, string>>;
+  scoringCategories?: ScoringCategoryCoverage[];
+  supportedScoringCategories?: number;
+  partialScoringCategories?: number;
+  unsupportedScoringCategories?: number;
+  scoringFingerprint?: string | null;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -54,6 +93,14 @@ const POSITION_ALIASES: Record<string, PlayerPosition> = {
   WR: "WR",
   TE: "TE",
   K: "K",
+  DL: "DL",
+  DE: "DL",
+  DT: "DL",
+  LB: "LB",
+  DB: "DB",
+  CB: "DB",
+  S: "DB",
+  IDP: "IDP",
 };
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -158,6 +205,7 @@ function playerId(record: JsonRecord) {
     "playerId",
     "fantasypros_id",
     "fantasyProsId",
+    "fpid",
     "id",
   ]);
   if (direct) return direct;
@@ -291,9 +339,41 @@ function newestTimestamp(responses: IntelligenceResponse[]) {
   return newest ? new Date(newest).toISOString() : null;
 }
 
+function projectionStats(record: JsonRecord) {
+  const result: Record<string, number> = {};
+  const source = record.stats;
+  const records = Array.isArray(source)
+    ? source.filter(isRecord)
+    : isRecord(source)
+      ? [source]
+      : [record];
+  for (const item of records) {
+    for (const [key, value] of Object.entries(item)) {
+      const parsed =
+        typeof value === "number"
+          ? value
+          : typeof value === "string" && value.trim() !== ""
+            ? Number(value)
+            : Number.NaN;
+      if (Number.isFinite(parsed)) result[key] = parsed;
+    }
+  }
+  return result;
+}
+
+function providerProjection(stats: Record<string, number>) {
+  return (
+    stats.points_ppr ??
+    stats.points_half ??
+    stats.points ??
+    null
+  );
+}
+
 export function buildPlayerBoard(
   responses: IntelligenceResponse[],
   failures: Partial<Record<IntelligenceDataset, string>> = {},
+  scoringContext: (LeagueScoringContext & { fingerprint?: string }) | null = null,
 ): PlayerBoardData {
   const byDataset = new Map(
     responses.map((response) => [response.dataset, response] as const),
@@ -358,6 +438,18 @@ export function buildPlayerBoard(
       .map(newsItem);
     const name = playerName(base) || playerName(metadata) || "Unknown player";
     const id = playerId(base) || playerId(metadata) || normalizedKey(name);
+    const stats = projectionStats(projection);
+    const fallbackProjection =
+      providerProjection(stats) ??
+      asNumber(projection, [
+        "fpts",
+        "FPTS",
+        "fantasy_points",
+        "fantasy_points_ppr",
+        "projected_points",
+        "points",
+        "pts",
+      ]);
 
     return {
       id,
@@ -378,15 +470,9 @@ export function buildPlayerBoard(
         "average_draft_position",
         "avg_pick",
       ]),
-      projectedPoints: asNumber(projection, [
-        "fpts",
-        "FPTS",
-        "fantasy_points",
-        "fantasy_points_ppr",
-        "projected_points",
-        "points",
-        "pts",
-      ]),
+      projectedPoints: fallbackProjection,
+      providerProjectedPoints: fallbackProjection,
+      projectionStats: stats,
       expertBest: asNumber(base, ["rank_min", "best_rank", "rank_best"]),
       expertWorst: asNumber(base, ["rank_max", "worst_rank", "rank_worst"]),
       expertAverage: asNumber(base, ["rank_ave", "average_rank", "rank_avg"]),
@@ -413,7 +499,33 @@ export function buildPlayerBoard(
         asNumber(metadata, ["bye_week", "bye", "player_bye_week"]),
       news,
     } satisfies PlayerIntelligence;
-  }).sort((left, right) => {
+  });
+
+  const adjusted = scoringContext
+    ? buildLeagueScoringBoard(
+      players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        position: player.position,
+        projectionStats: player.projectionStats ?? {},
+        providerProjectedPoints: player.providerProjectedPoints ?? null,
+      })),
+      scoringContext,
+    )
+    : null;
+  const adjustedById = new Map(
+    adjusted?.players.map((player) => [player.id, player]) ?? [],
+  );
+  const scoredPlayers = players.map((player) => ({
+    ...player,
+    ...(adjustedById.get(player.id) ?? {}),
+    tier: adjustedById.get(player.id)?.leagueTier ?? player.tier,
+  })).sort((left, right) => {
+    if (scoringContext) {
+      const leftRank = left.leagueRank ?? Number.MAX_SAFE_INTEGER;
+      const rightRank = right.leagueRank ?? Number.MAX_SAFE_INTEGER;
+      if (leftRank !== rightRank) return leftRank - rightRank;
+    }
     const leftRank = left.ecr ?? Number.MAX_SAFE_INTEGER;
     const rightRank = right.ecr ?? Number.MAX_SAFE_INTEGER;
     return leftRank - rightRank || left.name.localeCompare(right.name);
@@ -427,7 +539,7 @@ export function buildPlayerBoard(
   ]);
 
   return {
-    players,
+    players: scoredPlayers,
     fetchedAt: newestTimestamp(responses),
     datasetFetchedAt: Object.fromEntries(
       responses.map((response) => [response.dataset, response.fetchedAt]),
@@ -437,5 +549,10 @@ export function buildPlayerBoard(
       "Data obtained from FantasyPros.",
     totalExperts,
     datasetErrors,
+    scoringCategories: adjusted?.categories ?? [],
+    supportedScoringCategories: adjusted?.supportedCategories ?? 0,
+    partialScoringCategories: adjusted?.partialCategories ?? 0,
+    unsupportedScoringCategories: adjusted?.unsupportedCategories ?? 0,
+    scoringFingerprint: scoringContext?.fingerprint ?? null,
   };
 }

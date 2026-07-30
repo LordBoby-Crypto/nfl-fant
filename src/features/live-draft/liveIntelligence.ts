@@ -151,7 +151,8 @@ export function tierBreakForPlayer(
     .sort(
       (left, right) =>
         (left.tier ?? 999) - (right.tier ?? 999) ||
-        (left.ecr ?? 9999) - (right.ecr ?? 9999),
+        (left.leagueRank ?? left.ecr ?? 9999) -
+          (right.leagueRank ?? right.ecr ?? 9999),
     );
   const currentTier = positionPool.filter(
     (candidate) => candidate.tier === player.tier,
@@ -159,9 +160,11 @@ export function tierBreakForPlayer(
   const next = positionPool.find(
     (candidate) => (candidate.tier ?? player.tier!) > player.tier!,
   );
+  const playerRank = player.leagueRank ?? player.ecr;
+  const nextRank = next?.leagueRank ?? next?.ecr;
   const ecrDrop =
-    player.ecr !== null && next?.ecr !== null && next?.ecr !== undefined
-      ? Math.max(0, next.ecr - player.ecr)
+    playerRank !== null && nextRank !== null && nextRank !== undefined
+      ? Math.max(0, nextRank - playerRank)
       : null;
   return {
     playerId: player.id,

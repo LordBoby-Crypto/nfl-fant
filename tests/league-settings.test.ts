@@ -194,7 +194,11 @@ test("only genuinely unmodeled structures produce modeling limitations", () => {
     limitations.some((item) => item.id === "unknown-roster-slots"),
     true,
   );
-  assert.equal(limitations.some((item) => item.id === "idp-projections"), true);
+  assert.equal(
+    limitations.some((item) => item.id === "idp-projections"),
+    false,
+    "Milestone 17 models IDP projections and reports field-level coverage on the rankings board",
+  );
 });
 
 test("keeper selections remain drafted, count toward needs and leave the player pool", () => {

@@ -41,7 +41,17 @@ type CacheEntry = {
 };
 
 const cache = new Map<string, CacheEntry>();
-const FANTASY_POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"] as const;
+const FANTASY_POSITIONS = [
+  "QB",
+  "RB",
+  "WR",
+  "TE",
+  "K",
+  "DST",
+  "DL",
+  "LB",
+  "DB",
+] as const;
 
 class FantasyProsError extends Error {
   constructor(

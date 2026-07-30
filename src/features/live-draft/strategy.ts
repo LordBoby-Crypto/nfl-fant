@@ -505,6 +505,10 @@ function availabilityAtPick(player: PlayerIntelligence, pickNumber: number) {
   return 1 / (1 + Math.exp((pickNumber - center) / spread));
 }
 
+function adjustedRank(player: PlayerIntelligence) {
+  return player.leagueRank ?? player.ecr;
+}
+
 function positionPlanScore({
   player,
   counts,
@@ -527,10 +531,14 @@ function positionPlanScore({
     TE: draft.settings.slots_te,
     K: draft.settings.slots_k,
     DST: draft.settings.slots_def,
+    DL: draft.settings.slots_dl ?? 0,
+    LB: draft.settings.slots_lb ?? 0,
+    DB: draft.settings.slots_db ?? 0,
+    IDP: 0,
   };
   const missing = Math.max(0, requirements[position] - counts[position]);
   const availability = availabilityAtPick(player, pickNumber);
-  let score = 150 - (player.ecr ?? player.adp ?? 220);
+  let score = 150 - (adjustedRank(player) ?? player.adp ?? 220);
   score += missing ? 28 + missing * 6 : -4;
   if (
     (player.position === "RB" ||
@@ -589,6 +597,10 @@ export function buildAllSlotPlans({
       TE: 0,
       K: 0,
       DST: 0,
+      DL: 0,
+      LB: 0,
+      DB: 0,
+      IDP: 0,
     };
     const used = new Set<string>();
     const rounds: SlotPlanRound[] = [];
@@ -619,7 +631,8 @@ export function buildAllSlotPlans({
         .sort(
           (left, right) =>
             right.score - left.score ||
-            (left.player.ecr ?? 9999) - (right.player.ecr ?? 9999),
+            (adjustedRank(left.player) ?? 9999) -
+              (adjustedRank(right.player) ?? 9999),
         );
       const lead = candidates[0];
       if (lead) {
@@ -629,7 +642,8 @@ export function buildAllSlotPlans({
         }
         confidenceTotal += lead.availability;
         gradeTotal +=
-          (lead.player.projectedPoints ?? Math.max(0, 250 - (lead.player.ecr ?? 200))) *
+          (lead.player.projectedPoints ??
+            Math.max(0, 250 - (adjustedRank(lead.player) ?? 200))) *
           (0.65 + lead.availability * 0.35);
       }
       const focus = [...new Set(
@@ -803,6 +817,10 @@ export function runDraftSimulations({
     TE: 0,
     K: 0,
     DST: 0,
+    DL: 0,
+    LB: 0,
+    DB: 0,
+    IDP: 0,
   };
   const grades: number[] = [];
 
@@ -939,7 +957,7 @@ function simulationGrade(
       total +
       Math.max(
         0,
-        180 - (player.ecr ?? player.adp ?? 180),
+        180 - (adjustedRank(player) ?? player.adp ?? 180),
       ),
     0,
   );
@@ -974,6 +992,10 @@ export function runDraftSimulationsDetailed({
     TE: 0,
     K: 0,
     DST: 0,
+    DL: 0,
+    LB: 0,
+    DB: 0,
+    IDP: 0,
   };
   const targetIds = new Set([...controls.target, ...controls.queue]);
   const targetHits = new Map<string, number>();

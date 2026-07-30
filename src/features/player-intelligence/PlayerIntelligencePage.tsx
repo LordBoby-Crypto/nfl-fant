@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useDeferredValue,
   useMemo,
   useState,
@@ -29,10 +30,21 @@ import type { useWarRoom } from "./useWarRoom";
 
 type WarRoomState = ReturnType<typeof useWarRoom>;
 type IntelligenceMode = "Rankings" | "Players";
-type SortMode = "ecr" | "adp" | "projection";
+type SortMode = "leagueRank" | "ecr" | "adp" | "projection" | "replacement";
 type PositionFilter = "ALL" | Exclude<PlayerPosition, "—">;
 
-const POSITIONS: PositionFilter[] = ["ALL", "QB", "RB", "WR", "TE", "K", "DST"];
+const POSITIONS: PositionFilter[] = [
+  "ALL",
+  "QB",
+  "RB",
+  "WR",
+  "TE",
+  "K",
+  "DST",
+  "DL",
+  "LB",
+  "DB",
+];
 
 function formatNumber(value: number | null, digits = 0) {
   if (value === null) return "—";
@@ -173,14 +185,71 @@ function IntelligenceToolbar({
   );
 }
 
-function InjuryState({ player }: { player: PlayerIntelligence }) {
-  if (!player.injuryStatus && !player.injuryDetail) {
-    return <span className="availability healthy">No designation</span>;
-  }
+function confidenceLabel(player: PlayerIntelligence) {
+  if (!player.scoringConfidence) return "Not recalculated";
+  return `${player.scoringConfidence[0].toUpperCase()}${player.scoringConfidence.slice(1)}`;
+}
+
+function PlayerScoringFormula({ player }: { player: PlayerIntelligence }) {
+  const formula = player.scoringFormula ?? [];
   return (
-    <span className="availability injured">
-      {player.injuryStatus || player.injuryDetail}
-    </span>
+    <section className="player-scoring-formula" aria-label={`${player.name} scoring formula`}>
+      <header>
+        <div>
+          <h3>Exact league scoring formula</h3>
+          <p>
+            {formula.length
+              ? `${formula.length} applicable scoring components were checked against this player's statistical projection.`
+              : "No usable component statistics were returned for this player."}
+          </p>
+        </div>
+        <span className={`scoring-confidence is-${player.scoringConfidence ?? "low"}`}>
+          {confidenceLabel(player)} confidence · {formatNumber(player.scoringCoverage ?? 0)}% coverage
+        </span>
+      </header>
+      <div className="formula-total">
+        <span>
+          League projection ={" "}
+          {formula
+            .filter((term) => term.points !== null)
+            .map((term) => `${term.label} (${term.note})`)
+            .join(" + ") || "provider fallback only"}
+        </span>
+        <strong>
+          {player.projectedPoints === null
+            ? "Unavailable"
+            : `${formatNumber(player.projectedPoints, 2)} points`}
+        </strong>
+      </div>
+      {formula.length ? (
+        <div className="formula-terms">
+          {formula.map((term) => (
+            <article key={term.key} className={`is-${term.support}`}>
+              <span>
+                <strong>{term.label}</strong>
+                <small><code>{term.key}</code> · {term.stat}</small>
+              </span>
+              <span className="formula-calculation">
+                <strong>
+                  {term.points === null ? "Not modeled" : `${formatNumber(term.points, 2)} pts`}
+                </strong>
+                <small>{term.note}</small>
+              </span>
+              <em>{term.support}</em>
+            </article>
+          ))}
+        </div>
+      ) : null}
+      {player.scoringWarnings?.length ? (
+        <div className="formula-warning" role="note">
+          <CircleAlert />
+          <span>
+            <strong>Projection confidence is limited</strong>
+            <small>{player.scoringWarnings.join(" ")}</small>
+          </span>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -198,48 +267,72 @@ function PlayerRows({
       <table className="player-table">
         <thead>
           <tr>
-            <th scope="col">ECR</th>
+            <th scope="col">League rank</th>
             <th scope="col">Player</th>
+            <th scope="col">Pos.</th>
             <th scope="col">Tier</th>
             <th scope="col">ADP</th>
-            <th scope="col">Proj.</th>
-            <th scope="col">Availability</th>
+            <th scope="col">League proj.</th>
+            <th scope="col">VOR</th>
+            <th scope="col">Confidence</th>
             <th scope="col"><span className="sr-only">Open player</span></th>
           </tr>
         </thead>
         <tbody>
           {players.map((player) => (
-            <tr
-              key={player.id}
-              className={selectedId === player.id ? "is-selected" : ""}
-              onClick={() => onSelect(player.id)}
-            >
-              <td data-label="ECR">
-                <strong className="rank-number">
-                  {formatNumber(player.ecr)}
-                </strong>
-              </td>
-              <td data-label="Player">
-                <div className="player-identity">
-                  <span className={`position-mark position-${player.position.toLowerCase()}`}>
-                    {player.position}
+            <Fragment key={player.id}>
+              <tr
+                className={selectedId === player.id ? "is-selected" : ""}
+                onClick={() => onSelect(player.id)}
+              >
+                <td data-label="League rank">
+                  <strong className="rank-number">
+                    #{formatNumber(player.leagueRank ?? null)}
+                  </strong>
+                  <small className="consensus-rank">ECR {formatNumber(player.ecr)}</small>
+                </td>
+                <td data-label="Player">
+                  <div className="player-identity">
+                    <span className={`position-mark position-${player.position.toLowerCase()}`}>
+                      {player.position}
+                    </span>
+                    <span>
+                      <strong>{player.name}</strong>
+                      <small>{player.team} · {player.positionRank}</small>
+                    </span>
+                  </div>
+                </td>
+                <td data-label="Position rank">
+                  {player.position}{formatNumber(player.leaguePositionRank ?? null)}
+                </td>
+                <td data-label="Tier">{formatNumber(player.leagueTier ?? player.tier)}</td>
+                <td data-label="ADP">{formatNumber(player.adp, 1)}</td>
+                <td data-label="League projection">
+                  {player.projectedPoints === null
+                    ? "—"
+                    : `${formatNumber(player.projectedPoints, 1)} pts`}
+                </td>
+                <td data-label="Value over replacement">
+                  {player.replacementValue === null ||
+                  player.replacementValue === undefined
+                    ? "—"
+                    : `${player.replacementValue >= 0 ? "+" : ""}${formatNumber(player.replacementValue, 1)}`}
+                </td>
+                <td data-label="Confidence">
+                  <span className={`scoring-confidence compact is-${player.scoringConfidence ?? "low"}`}>
+                    {confidenceLabel(player)}
                   </span>
-                  <span>
-                    <strong>{player.name}</strong>
-                    <small>{player.team} · {player.positionRank}</small>
-                  </span>
-                </div>
-              </td>
-              <td data-label="Tier">{formatNumber(player.tier)}</td>
-              <td data-label="ADP">{formatNumber(player.adp, 1)}</td>
-              <td data-label="Projection">
-                {player.projectedPoints === null
-                  ? "—"
-                  : `${formatNumber(player.projectedPoints, 1)} pts`}
-              </td>
-              <td data-label="Availability"><InjuryState player={player} /></td>
-              <td className="row-action"><ChevronRight /></td>
-            </tr>
+                </td>
+                <td className="row-action"><ChevronRight /></td>
+              </tr>
+              {selectedId === player.id ? (
+                <tr className="player-formula-row">
+                  <td colSpan={9}>
+                    <PlayerScoringFormula player={player} />
+                  </td>
+                </tr>
+              ) : null}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -267,14 +360,21 @@ function PlayerDetail({ player }: { player: PlayerIntelligence }) {
       </header>
 
       <div className="detail-metrics">
-        <span><small>ECR</small><strong>{formatNumber(player.ecr)}</strong></span>
-        <span><small>Tier</small><strong>{formatNumber(player.tier)}</strong></span>
+        <span><small>League rank</small><strong>#{formatNumber(player.leagueRank ?? null)}</strong></span>
+        <span><small>Position rank</small><strong>{player.position}{formatNumber(player.leaguePositionRank ?? null)}</strong></span>
+        <span><small>League tier</small><strong>{formatNumber(player.leagueTier ?? player.tier)}</strong></span>
         <span><small>ADP</small><strong>{formatNumber(player.adp, 1)}</strong></span>
         <span>
-          <small>Projection</small>
+          <small>League projection</small>
           <strong>{formatNumber(player.projectedPoints, 1)}</strong>
         </span>
+        <span>
+          <small>Value over replacement</small>
+          <strong>{formatNumber(player.replacementValue ?? null, 1)}</strong>
+        </span>
       </div>
+
+      <PlayerScoringFormula player={player} />
 
       <section>
         <h3>Expert range</h3>
@@ -335,6 +435,67 @@ function PlayerDetail({ player }: { player: PlayerIntelligence }) {
   );
 }
 
+function LeagueScoringCoverage({ board }: { board: PlayerBoardData }) {
+  const active = (board.scoringCategories ?? []).filter(
+    (category) => category.value !== 0,
+  );
+  const warnings = active.filter(
+    (category) => category.support !== "supported",
+  );
+  return (
+    <section className="scoring-coverage-panel" aria-labelledby="scoring-coverage-title">
+      <header>
+        <span className="coverage-icon"><ShieldCheck /></span>
+        <div>
+          <h2 id="scoring-coverage-title">League scoring projection coverage</h2>
+          <p>
+            Every non-zero Sleeper rule is checked against the underlying FantasyPros
+            statistical projections before rankings are rebuilt.
+          </p>
+        </div>
+      </header>
+      <div className="coverage-counts">
+        <span className="is-supported">
+          <strong>{board.supportedScoringCategories ?? 0}</strong>
+          <small>supported</small>
+        </span>
+        <span className="is-partial">
+          <strong>{board.partialScoringCategories ?? 0}</strong>
+          <small>partially supported</small>
+        </span>
+        <span className="is-unsupported">
+          <strong>{board.unsupportedScoringCategories ?? 0}</strong>
+          <small>unsupported</small>
+        </span>
+      </div>
+      {warnings.length ? (
+        <details>
+          <summary>
+            <CircleAlert />
+            Review {warnings.length} confidence warning{warnings.length === 1 ? "" : "s"}
+          </summary>
+          <div className="coverage-warning-list">
+            {warnings.map((category) => (
+              <article key={category.key} className={`is-${category.support}`}>
+                <span>
+                  <strong>{category.label}</strong>
+                  <small><code>{category.key}</code> · {category.value} points</small>
+                </span>
+                <p>{category.detail}</p>
+                <em>{category.support}</em>
+              </article>
+            ))}
+          </div>
+        </details>
+      ) : (
+        <p className="coverage-complete">
+          <Check /> All active scoring categories have the required projections.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function LoadingBoard() {
   return (
     <section className="board-loading" aria-live="polite">
@@ -366,7 +527,7 @@ export function PlayerIntelligencePage({
 }) {
   const [query, setQuery] = useState("");
   const [position, setPosition] = useState<PositionFilter>("ALL");
-  const [sort, setSort] = useState<SortMode>("ecr");
+  const [sort, setSort] = useState<SortMode>("leagueRank");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query);
 
@@ -384,12 +545,23 @@ export function PlayerIntelligencePage({
     });
 
     return [...filtered].sort((left, right) => {
-      const field = sort === "ecr" ? "ecr" : sort === "adp" ? "adp" : "projectedPoints";
+      const field =
+        sort === "leagueRank"
+          ? "leagueRank"
+          : sort === "ecr"
+            ? "ecr"
+            : sort === "adp"
+              ? "adp"
+              : sort === "replacement"
+                ? "replacementValue"
+                : "projectedPoints";
       const missingValue =
-        sort === "projection" ? Number.MIN_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+        sort === "projection" || sort === "replacement"
+          ? Number.MIN_SAFE_INTEGER
+          : Number.MAX_SAFE_INTEGER;
       const leftValue = left[field] ?? missingValue;
       const rightValue = right[field] ?? missingValue;
-      if (sort === "projection") {
+      if (sort === "projection" || sort === "replacement") {
         return rightValue - leftValue || left.name.localeCompare(right.name);
       }
       return leftValue - rightValue || left.name.localeCompare(right.name);
@@ -422,7 +594,7 @@ export function PlayerIntelligencePage({
           <h1>{mode}</h1>
           <p>
             {mode === "Rankings"
-              ? `Live ${season} consensus board with ${scoringLabel} league context.`
+              ? `Live ${season} rankings rebuilt for ${scoringLabel}, ${draftFormat} roster demand, replacement value and positional scarcity.`
               : "Search every ranked player and open a complete research view."}
           </p>
         </div>
@@ -468,8 +640,10 @@ export function PlayerIntelligencePage({
             <span><strong>{warRoom.board.players.length}</strong><small>ranked players</small></span>
             <span><strong>{warRoom.board.totalExperts ?? "—"}</strong><small>consensus experts</small></span>
             <span><strong>{scoringLabel}</strong><small>league scoring</small></span>
-            <span><strong>{season}</strong><small>{draftFormat} draft</small></span>
+            <span><strong>{warRoom.board.supportedScoringCategories ?? 0}</strong><small>modeled scoring rules</small></span>
           </section>
+
+          <LeagueScoringCoverage board={warRoom.board} />
 
           {Object.keys(warRoom.board.datasetErrors).length ? (
             <div className="partial-data-note">
@@ -512,9 +686,11 @@ export function PlayerIntelligencePage({
                 value={sort}
                 onChange={(event) => setSort(event.target.value as SortMode)}
               >
+                <option value="leagueRank">League-adjusted rank</option>
                 <option value="ecr">Expert rank</option>
                 <option value="adp">ADP</option>
                 <option value="projection">Projected points</option>
+                <option value="replacement">Value over replacement</option>
               </select>
             </label>
           </section>
@@ -531,9 +707,11 @@ export function PlayerIntelligencePage({
                 </div>
                 <PlayerRows
                   players={filteredPlayers}
-                  selectedId={mode === "Players" ? selected?.id ?? null : null}
+                  selectedId={selectedId}
                   onSelect={(playerId) => {
-                    setSelectedId(playerId);
+                    setSelectedId((current) =>
+                      current === playerId ? null : playerId
+                    );
                     if (mode === "Rankings") return;
                     document
                       .querySelector(".player-detail")

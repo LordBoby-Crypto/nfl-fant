@@ -197,15 +197,6 @@ export function buildLeagueSettingsModel(
       detail: `Sleeper returned ${unknownSlots.join(", ")}. Those slots are displayed but excluded from positional-need calculations.`,
     });
   }
-  if (idpSlots) {
-    limitations.push({
-      id: "idp-projections",
-      level: "warning",
-      label: "IDP projection coverage",
-      detail:
-        "IDP slots and keepers are imported and counted. Individual defender ranking confidence remains limited until the league-adjusted projection engine is added in Milestone 17.",
-    });
-  }
   if (!roster) {
     limitations.push({
       id: "user-roster",
@@ -375,7 +366,7 @@ export function diffLeagueSettings(
         .map((item) => `${item.key} ${item.after ?? "unset"}`)
         .join(", ")}`,
       recommendationImpact:
-        "The new scoring profile is now shown and retained. Statistical re-ranking is handled by Milestone 17.",
+        "Projected points, positional ranks, replacement values and tiers were rebuilt from the new scoring rules.",
     });
   }
   add(

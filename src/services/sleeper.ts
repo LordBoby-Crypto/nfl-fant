@@ -184,6 +184,9 @@ export function normalizeLeagueSnapshot(
           "WRRBTE_FLEX",
         ),
         slots_super_flex: count("SUPER_FLEX", "OP"),
+        slots_dl: count("DL", "DE", "DT"),
+        slots_lb: count("LB"),
+        slots_db: count("DB", "CB", "S"),
         slots_idp_flex: count(
           "DL",
           "DE",

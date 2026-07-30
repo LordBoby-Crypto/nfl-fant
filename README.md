@@ -177,6 +177,37 @@ Milestone 14 adds:
 - Position weaknesses ordered into an immediate action plan
 - Provisional-grade disclosure when a roster player cannot be matched
 
+Milestone 16 adds:
+
+- Sleeper as the automatic source of truth for teams, rounds, format, roster
+  slots, bench, IR, taxi squads, FLEX, SUPER_FLEX, IDP and keepers
+- Complete import and display of every Sleeper scoring rule
+- Automatic team and draft-position detection
+- Settings refresh on open, manual refresh, reconnect, live polling and before
+  recommendations
+- Commissioner-change notices with the exact old value, new value and
+  recommendation impact
+- Warnings only for structures the current engine genuinely cannot model
+
+Milestone 17 adds:
+
+- Fantasy-point reconstruction from FantasyPros statistical projections using
+  the connected league's complete Sleeper scoring configuration
+- Passing, rushing, receiving, kicking, defense, return and IDP component
+  scoring, including reception formats and tight-end premium
+- Attempts, completions, incompletions, turnovers, sacks and supported
+  big-game yardage thresholds
+- League-adjusted overall and positional ranks, replacement value, positional
+  scarcity and recalculated tiers
+- Roster-demand adjustment for FLEX, SUPER_FLEX, bench depth and IDP
+- An auditable formula for every player with each projected statistic,
+  multiplier and point contribution
+- High, medium or low per-player confidence plus exact supported, partial and
+  unsupported category warnings
+- Honest partial models for total-fumble and field-goal-distance limitations;
+  unavailable first-down, long-play and return-yardage counts are never
+  silently invented
+
 ## Local development
 
 ```bash
@@ -224,6 +255,10 @@ Post-draft tests cover Sleeper completion activation, stable grade boundaries,
 selection value, justified and unnecessary reaches, successful waits,
 bye/injury concentrations, undrafted-player ordering, saved-intent waiver
 priorities, Week 1 optimization, and unmatched-player disclosure.
+League-scoring tests cover PPR variants, tight-end premium, passing volume,
+turnovers, yardage thresholds, kicking confidence, defense, returns, IDP,
+unsupported custom categories, nested provider-stat parsing, roster scarcity,
+replacement value and Superflex rank movement.
 
 Milestone 15 adds the final draft-day release gate: complete 238-pick
 rehearsals from early, middle, and late slots; outage/reconnect and provider
