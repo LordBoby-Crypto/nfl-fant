@@ -3,10 +3,18 @@ import test from "node:test";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import {
   applyCors,
+  requireMethod,
   STATUS_CACHE_CONTROL,
 } from "../api/_lib/http.ts";
 import { createSessionToken } from "../api/_lib/session.ts";
-import syncHandler from "../api/sync.ts";
+import { hasValidSession } from "../api/_lib/session.ts";
+import { createSyncHandler } from "../api/_lib/sync-handler.ts";
+
+const syncHandler = createSyncHandler({
+  applyCors,
+  requireMethod,
+  hasValidSession,
+});
 
 function responseHarness() {
   const headers = new Map<string, string>();
