@@ -389,16 +389,41 @@ export function availablePlayers(
   board: PlayerIntelligence[],
   picks: SleeperDraftPick[],
 ) {
-  const draftedIds = new Set(
-    picks.map((pick) => String(pick.player_id)),
-  );
-  const draftedNames = new Set(
-    picks.map((pick) => normalizePlayerName(pickPlayerName(pick))),
-  );
+  const drafted = buildDraftedPlayerLookup(picks);
   return board.filter(
-    (player) =>
-      !draftedIds.has(String(player.id)) &&
-      !draftedNames.has(normalizePlayerName(player.name)),
+    (player) => !draftPickForPlayer(player, drafted),
+  );
+}
+
+export interface DraftedPlayerLookup {
+  byId: Map<string, SleeperDraftPick>;
+  byName: Map<string, SleeperDraftPick>;
+}
+
+export function buildDraftedPlayerLookup(
+  picks: SleeperDraftPick[],
+): DraftedPlayerLookup {
+  return {
+    byId: new Map(
+      picks.map((pick) => [String(pick.player_id), pick]),
+    ),
+    byName: new Map(
+      picks.map((pick) => [
+        normalizePlayerName(pickPlayerName(pick)),
+        pick,
+      ]),
+    ),
+  };
+}
+
+export function draftPickForPlayer(
+  player: PlayerIntelligence,
+  lookup: DraftedPlayerLookup,
+) {
+  return (
+    lookup.byId.get(String(player.id)) ??
+    lookup.byName.get(normalizePlayerName(player.name)) ??
+    null
   );
 }
 
@@ -554,6 +579,7 @@ export function recommendPlayers({
   userRosterId,
   cursor,
   controls,
+  limit = 5,
 }: {
   available: PlayerIntelligence[];
   allPlayers: PlayerIntelligence[];
@@ -561,6 +587,7 @@ export function recommendPlayers({
   userRosterId: number;
   cursor: DraftCursor;
   controls: DraftControlState;
+  limit?: number;
 }) {
   const userTeam = teams.find((team) => team.rosterId === userRosterId);
   if (!userTeam) return [];
@@ -681,7 +708,7 @@ export function recommendPlayers({
         (adjustedRank(left.player) ?? 9999) -
           (adjustedRank(right.player) ?? 9999),
     )
-    .slice(0, 5);
+    .slice(0, Math.max(0, limit));
 }
 
 export function cpuPlayerScore(

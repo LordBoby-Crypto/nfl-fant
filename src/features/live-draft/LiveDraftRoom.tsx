@@ -1187,8 +1187,7 @@ export function LiveDraftRoom({
           player.name.toLocaleLowerCase().includes(search) ||
           player.team.toLocaleLowerCase().includes(search) ||
           player.position.toLocaleLowerCase().includes(search),
-      )
-      .slice(0, 80);
+      );
   }, [available, deferredQuery]);
   const currentTeam = teams.find(
     (team) => team.rosterId === cursor.currentRosterId,

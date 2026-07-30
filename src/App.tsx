@@ -59,7 +59,7 @@ import {
 type View =
   | "Overview"
   | "Draft Room"
-  | "Rankings"
+  | "Draft Rankings"
   | "Players"
   | "My Team"
   | "Waivers"
@@ -70,7 +70,7 @@ type StatusView = Exclude<
   View,
   | "Overview"
   | "Draft Room"
-  | "Rankings"
+  | "Draft Rankings"
   | "Players"
   | "My Team"
   | "Waivers"
@@ -84,7 +84,7 @@ const NAV_ITEMS: Array<{
 }> = [
   { name: "Overview", icon: LayoutDashboard },
   { name: "Draft Room", icon: ClipboardList },
-  { name: "Rankings", icon: Trophy },
+  { name: "Draft Rankings", icon: Trophy },
   { name: "Players", icon: Search },
   { name: "My Team", icon: Shield },
   { name: "Waivers", icon: Sparkles },
@@ -348,7 +348,7 @@ function App() {
   const warRoom = useWarRoom(
     view === "Overview" ||
       view === "Draft Room" ||
-      view === "Rankings" ||
+      view === "Draft Rankings" ||
       view === "Players" ||
       view === "My Team" ||
       view === "Waivers" ||
@@ -371,6 +371,7 @@ function App() {
     data?.draft.status ?? null,
     view === "Overview" ||
       view === "Draft Room" ||
+      view === "Draft Rankings" ||
       view === "My Team" ||
       view === "Waivers" ||
       view === "Trades" ||
@@ -534,13 +535,15 @@ function App() {
             onEnsureSettingsFresh={league.ensureFresh}
             warRoom={warRoom}
           />
-        ) : view === "Rankings" || view === "Players" ? (
+        ) : view === "Draft Rankings" || view === "Players" ? (
           <PlayerIntelligencePage
             leagueName={data.league.name}
             mode={view}
             scoringLabel={settingsModel.scoringLabel}
             season={data.league.season}
             draftFormat={settingsModel.draftFormat}
+            snapshot={data}
+            draftPicks={draftPicks}
             status={intelligence.data}
             warRoom={warRoom}
           />

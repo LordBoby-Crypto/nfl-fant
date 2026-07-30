@@ -12,8 +12,11 @@ import {
   CircleAlert,
   Clock3,
   ExternalLink,
+  EyeOff,
   FileText,
+  ListChecks,
   LockKeyhole,
+  Radio,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -27,10 +30,37 @@ import type {
   PlayerPosition,
 } from "./model";
 import type { useWarRoom } from "./useWarRoom";
+import type { useDraftPicks } from "../../hooks/useDraftPicks";
+import type { LeagueSnapshot } from "../../types";
+import { getUserRoster } from "../../services/sleeper";
+import {
+  buildTeamDraftStates,
+  draftPickForPlayer,
+  getDraftCursor,
+  pickPosition,
+  recommendPlayers,
+  type DraftedPlayerLookup,
+  type TeamDraftState,
+} from "../live-draft/engine";
+import { useDraftControls } from "../live-draft/useDraftControls";
+import {
+  buildOffBoardEntries,
+  completeDraftRankingState,
+  filterDraftRankingPlayers,
+  playerStatusLabel,
+  type DraftRankingAvailability,
+} from "./draftRankings";
 
 type WarRoomState = ReturnType<typeof useWarRoom>;
-type IntelligenceMode = "Rankings" | "Players";
-type SortMode = "leagueRank" | "ecr" | "adp" | "projection" | "replacement";
+type DraftPickState = ReturnType<typeof useDraftPicks>;
+type IntelligenceMode = "Draft Rankings" | "Players";
+type SortMode =
+  | "leagueRank"
+  | "nextPick"
+  | "ecr"
+  | "adp"
+  | "projection"
+  | "replacement";
 type PositionFilter = "ALL" | Exclude<PlayerPosition, "—">;
 
 const POSITIONS: PositionFilter[] = [
@@ -45,6 +75,7 @@ const POSITIONS: PositionFilter[] = [
   "LB",
   "DB",
 ];
+const EMPTY_PLAYER_BOARD: PlayerIntelligence[] = [];
 
 function formatNumber(value: number | null, digits = 0) {
   if (value === null) return "—";
@@ -256,36 +287,55 @@ function PlayerScoringFormula({ player }: { player: PlayerIntelligence }) {
 function PlayerRows({
   players,
   selectedId,
+  drafted,
+  teams,
+  nextPickRanks,
   onSelect,
 }: {
   players: PlayerIntelligence[];
   selectedId: string | null;
+  drafted: DraftedPlayerLookup;
+  teams: TeamDraftState[];
+  nextPickRanks: Map<string, number>;
   onSelect: (playerId: string) => void;
 }) {
+  const teamsByRoster = new Map(
+    teams.map((team) => [team.rosterId, team.name]),
+  );
   return (
     <div className="player-table-wrap">
       <table className="player-table">
         <thead>
           <tr>
-            <th scope="col">League rank</th>
+            <th scope="col">Overall rank</th>
             <th scope="col">Player</th>
-            <th scope="col">Pos.</th>
-            <th scope="col">Tier</th>
+            <th scope="col">Position rank</th>
             <th scope="col">ADP</th>
+            <th scope="col">Tier</th>
             <th scope="col">League proj.</th>
-            <th scope="col">VOR</th>
+            <th scope="col">Availability</th>
             <th scope="col">Confidence</th>
             <th scope="col"><span className="sr-only">Open player</span></th>
           </tr>
         </thead>
         <tbody>
-          {players.map((player) => (
-            <Fragment key={player.id}>
+          {players.map((player) => {
+            const pick = draftPickForPlayer(player, drafted);
+            const teamName = pick
+              ? teamsByRoster.get(Number(pick.roster_id)) ??
+                `Roster ${pick.roster_id}`
+              : null;
+            const nextPickRank = nextPickRanks.get(player.id) ?? null;
+            return (
+              <Fragment key={player.id}>
               <tr
-                className={selectedId === player.id ? "is-selected" : ""}
+                className={[
+                  selectedId === player.id ? "is-selected" : "",
+                  pick ? "is-drafted" : "",
+                ].filter(Boolean).join(" ")}
                 onClick={() => onSelect(player.id)}
               >
-                <td data-label="League rank">
+                <td data-label="Overall rank">
                   <strong className="rank-number">
                     #{formatNumber(player.leagueRank ?? null)}
                   </strong>
@@ -298,25 +348,32 @@ function PlayerRows({
                     </span>
                     <span>
                       <strong>{player.name}</strong>
-                      <small>{player.team} · {player.positionRank}</small>
+                      <small>
+                        {player.team} · {player.positionRank}
+                        {nextPickRank ? ` · Next pick #${nextPickRank}` : ""}
+                      </small>
                     </span>
                   </div>
                 </td>
                 <td data-label="Position rank">
                   {player.position}{formatNumber(player.leaguePositionRank ?? null)}
                 </td>
-                <td data-label="Tier">{formatNumber(player.leagueTier ?? player.tier)}</td>
                 <td data-label="ADP">{formatNumber(player.adp, 1)}</td>
+                <td data-label="Tier">{formatNumber(player.leagueTier ?? player.tier)}</td>
                 <td data-label="League projection">
                   {player.projectedPoints === null
                     ? "—"
                     : `${formatNumber(player.projectedPoints, 1)} pts`}
                 </td>
-                <td data-label="Value over replacement">
-                  {player.replacementValue === null ||
-                  player.replacementValue === undefined
-                    ? "—"
-                    : `${player.replacementValue >= 0 ? "+" : ""}${formatNumber(player.replacementValue, 1)}`}
+                <td data-label="Availability">
+                  {pick ? (
+                    <span className="drafted-status">
+                      <strong>Drafted · Pick {pick.pick_no}</strong>
+                      <small>{teamName}</small>
+                    </span>
+                  ) : (
+                    <span className="available-status">Available</span>
+                  )}
                 </td>
                 <td data-label="Confidence">
                   <span className={`scoring-confidence compact is-${player.scoringConfidence ?? "low"}`}>
@@ -332,8 +389,9 @@ function PlayerRows({
                   </td>
                 </tr>
               ) : null}
-            </Fragment>
-          ))}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -496,6 +554,87 @@ function LeagueScoringCoverage({ board }: { board: PlayerBoardData }) {
   );
 }
 
+function RankingGlossary() {
+  return (
+    <details className="ranking-glossary">
+      <summary>
+        <CircleAlert />
+        What do Overall Rank, Position Rank, ADP, Tier and Projection mean?
+      </summary>
+      <div>
+        <article>
+          <strong>Overall Rank</strong>
+          <p>The player’s #1-to-# order after your Sleeper scoring and roster settings are applied.</p>
+        </article>
+        <article>
+          <strong>Position Rank</strong>
+          <p>The player’s rank only among eligible players at the same position, such as RB3 or WR12.</p>
+        </article>
+        <article>
+          <strong>ADP</strong>
+          <p>Average Draft Position: where that player is typically selected across drafts.</p>
+        </article>
+        <article>
+          <strong>Tier</strong>
+          <p>A group of similarly valuable players. A tier ending means the next alternative has a meaningful drop.</p>
+        </article>
+        <article>
+          <strong>Projection</strong>
+          <p>Expected fantasy points rebuilt from statistical projections using this league’s Sleeper scoring rules.</p>
+        </article>
+      </div>
+    </details>
+  );
+}
+
+function OffTheBoard({
+  entries,
+}: {
+  entries: ReturnType<typeof buildOffBoardEntries>;
+}) {
+  return (
+    <section className="off-board-section" aria-labelledby="off-board-title">
+      <header>
+        <ListChecks />
+        <span>
+          <h2 id="off-board-title">Off the Board</h2>
+          <p>
+            Every Sleeper selection, newest first. These players are excluded
+            from availability and every recommendation.
+          </p>
+        </span>
+        <strong>{entries.length} drafted</strong>
+      </header>
+      {entries.length ? (
+        <div className="off-board-list">
+          {entries.map((entry) => {
+            const position =
+              entry.player?.position ?? pickPosition(entry.pick) ?? "—";
+            return (
+              <article key={`${entry.pick.pick_no}-${entry.pick.player_id}`}>
+                <span className="off-board-pick">#{entry.pick.pick_no}</span>
+                <span className={`position-mark position-${position.toLowerCase()}`}>
+                  {position}
+                </span>
+                <span>
+                  <strong>{entry.playerName}</strong>
+                  <small>
+                    Round {entry.pick.round}.{String(entry.pick.draft_slot).padStart(2, "0")}
+                    {" · "}{entry.teamName}
+                  </small>
+                </span>
+                <em>Drafted</em>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="off-board-empty">No Sleeper selections have been made yet.</p>
+      )}
+    </section>
+  );
+}
+
 function LoadingBoard() {
   return (
     <section className="board-loading" aria-live="polite">
@@ -514,6 +653,8 @@ export function PlayerIntelligencePage({
   scoringLabel,
   season,
   draftFormat,
+  snapshot,
+  draftPicks,
   status,
   warRoom,
 }: {
@@ -522,29 +663,136 @@ export function PlayerIntelligencePage({
   scoringLabel: string;
   season: string;
   draftFormat: string;
+  snapshot: LeagueSnapshot;
+  draftPicks: DraftPickState;
   status: IntelligenceStatus | null;
   warRoom: WarRoomState;
 }) {
   const [query, setQuery] = useState("");
   const [position, setPosition] = useState<PositionFilter>("ALL");
   const [sort, setSort] = useState<SortMode>("leagueRank");
+  const [tier, setTier] = useState<"ALL" | number>("ALL");
+  const [team, setTeam] = useState<"ALL" | string>("ALL");
+  const [playerStatus, setPlayerStatus] = useState<"ALL" | string>("ALL");
+  const [availability, setAvailability] =
+    useState<DraftRankingAvailability>("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query);
+  const { controls } = useDraftControls();
+  const boardPlayers = warRoom.board?.players ?? EMPTY_PLAYER_BOARD;
+  const teams = useMemo(
+    () =>
+      buildTeamDraftStates({
+        draft: snapshot.draft,
+        users: snapshot.users,
+        rosters: snapshot.rosters,
+        picks: draftPicks.picks,
+      }),
+    [draftPicks.picks, snapshot.draft, snapshot.rosters, snapshot.users],
+  );
+  const userRoster = useMemo(() => getUserRoster(snapshot), [snapshot]);
+  const cursor = useMemo(
+    () =>
+      getDraftCursor(
+        snapshot.draft,
+        draftPicks.picks,
+        userRoster?.roster_id ?? -1,
+      ),
+    [draftPicks.picks, snapshot.draft, userRoster?.roster_id],
+  );
+  const draftState = useMemo(
+    () => completeDraftRankingState(boardPlayers, draftPicks.picks),
+    [boardPlayers, draftPicks.picks],
+  );
+  const nextPickRecommendations = useMemo(
+    () =>
+      userRoster
+        ? recommendPlayers({
+            available: draftState.available,
+            allPlayers: boardPlayers,
+            teams,
+            userRosterId: userRoster.roster_id,
+            cursor,
+            controls,
+            limit: draftState.available.length,
+          })
+        : [],
+    [
+      boardPlayers,
+      controls,
+      cursor,
+      draftState.available,
+      teams,
+      userRoster,
+    ],
+  );
+  const nextPickRanks = useMemo(
+    () =>
+      new Map(
+        nextPickRecommendations.map((recommendation, index) => [
+          recommendation.player.id,
+          index + 1,
+        ]),
+      ),
+    [nextPickRecommendations],
+  );
+  const offBoardEntries = useMemo(
+    () =>
+      buildOffBoardEntries({
+        picks: draftPicks.picks,
+        players: boardPlayers,
+        teams,
+      }),
+    [boardPlayers, draftPicks.picks, teams],
+  );
+  const tiers = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          boardPlayers
+            .map((player) => player.leagueTier ?? player.tier)
+            .filter((value): value is number => value !== null),
+        ),
+      ).sort((left, right) => left - right),
+    [boardPlayers],
+  );
+  const playerTeams = useMemo(
+    () =>
+      Array.from(
+        new Set(boardPlayers.map((player) => player.team).filter(Boolean)),
+      ).sort(),
+    [boardPlayers],
+  );
+  const playerStatuses = useMemo(
+    () =>
+      Array.from(new Set(boardPlayers.map(playerStatusLabel))).sort(),
+    [boardPlayers],
+  );
 
   const filteredPlayers = useMemo(() => {
-    const source = warRoom.board?.players ?? [];
-    const search = deferredQuery.trim().toLocaleLowerCase();
-    const filtered = source.filter((player) => {
-      const positionMatches = position === "ALL" || player.position === position;
-      const searchMatches =
-        !search ||
-        player.name.toLocaleLowerCase().includes(search) ||
-        player.team.toLocaleLowerCase().includes(search) ||
-        player.position.toLocaleLowerCase().includes(search);
-      return positionMatches && searchMatches;
+    const filtered = filterDraftRankingPlayers({
+      players: boardPlayers,
+      drafted: draftState.drafted,
+      filters: {
+        query: deferredQuery,
+        position,
+        tier,
+        team,
+        status: playerStatus,
+        availability,
+      },
     });
 
     return [...filtered].sort((left, right) => {
+      if (sort === "nextPick") {
+        const leftRank = nextPickRanks.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+        const rightRank = nextPickRanks.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+        return (
+          leftRank - rightRank ||
+          (left.leagueRank ?? Number.MAX_SAFE_INTEGER) -
+            (right.leagueRank ?? Number.MAX_SAFE_INTEGER)
+        );
+      }
       const field =
         sort === "leagueRank"
           ? "leagueRank"
@@ -566,12 +814,24 @@ export function PlayerIntelligencePage({
       }
       return leftValue - rightValue || left.name.localeCompare(right.name);
     });
-  }, [deferredQuery, position, sort, warRoom.board?.players]);
+  }, [
+    availability,
+    boardPlayers,
+    deferredQuery,
+    draftState.drafted,
+    nextPickRanks,
+    playerStatus,
+    position,
+    sort,
+    team,
+    tier,
+  ]);
 
   const selected =
     filteredPlayers.find((player) => player.id === selectedId) ??
     filteredPlayers[0] ??
     null;
+  const isDraftRankings = mode === "Draft Rankings";
 
   if (!warRoom.isUnlocked) {
     return (
@@ -593,8 +853,8 @@ export function PlayerIntelligencePage({
         <div>
           <h1>{mode}</h1>
           <p>
-            {mode === "Rankings"
-              ? `Live ${season} rankings rebuilt for ${scoringLabel}, ${draftFormat} roster demand, replacement value and positional scarcity.`
+            {isDraftRankings
+              ? `The complete live ${season} board, rebuilt for ${scoringLabel}, ${draftFormat} roster demand and every Sleeper selection.`
               : "Search every ranked player and open a complete research view."}
           </p>
         </div>
@@ -603,9 +863,12 @@ export function PlayerIntelligencePage({
       <IntelligenceToolbar
         board={warRoom.board}
         expiresAt={warRoom.sessionExpiresAt}
-        loading={warRoom.loadingData}
+        loading={warRoom.loadingData || draftPicks.refreshing}
         onLock={warRoom.lock}
-        onRefresh={warRoom.refresh}
+        onRefresh={() => {
+          warRoom.refresh();
+          void draftPicks.refresh();
+        }}
       />
 
       {warRoom.loadingData && !warRoom.board ? <LoadingBoard /> : null}
@@ -637,13 +900,40 @@ export function PlayerIntelligencePage({
       {warRoom.board?.players.length ? (
         <>
           <section className="board-summary" aria-label="Ranking summary">
-            <span><strong>{warRoom.board.players.length}</strong><small>ranked players</small></span>
-            <span><strong>{warRoom.board.totalExperts ?? "—"}</strong><small>consensus experts</small></span>
-            <span><strong>{scoringLabel}</strong><small>league scoring</small></span>
-            <span><strong>{warRoom.board.supportedScoringCategories ?? 0}</strong><small>modeled scoring rules</small></span>
+            <span><strong>{warRoom.board.players.length}</strong><small>complete ranked list</small></span>
+            <span><strong>{draftState.available.length}</strong><small>available now</small></span>
+            <span><strong>{draftPicks.picks.length}</strong><small>off the board</small></span>
+            <span><strong>{scoringLabel}</strong><small>league-adjusted scoring</small></span>
           </section>
 
+          {isDraftRankings ? (
+            <section className="ranking-live-sync" aria-live="polite">
+              <Radio />
+              <span>
+                <strong>
+                  {snapshot.draft.status === "drafting"
+                    ? "Live Sleeper synchronization active"
+                    : "Sleeper draft board connected"}
+                </strong>
+                <small>
+                  {draftPicks.fetchedAt
+                    ? `Last checked ${formatFetchedAt(new Date(draftPicks.fetchedAt).toISOString())}`
+                    : "Waiting for the first pick check"}
+                  {snapshot.draft.status === "drafting"
+                    ? " · Automatically checks every 5 seconds"
+                    : ""}
+                </small>
+              </span>
+              <em>
+                {draftPicks.error
+                  ? "Using last complete board"
+                  : `${draftPicks.picks.length} selections synchronized`}
+              </em>
+            </section>
+          ) : null}
+
           <LeagueScoringCoverage board={warRoom.board} />
+          {isDraftRankings ? <RankingGlossary /> : null}
 
           {Object.keys(warRoom.board.datasetErrors).length ? (
             <div className="partial-data-note">
@@ -654,6 +944,35 @@ export function PlayerIntelligencePage({
                 live data is shown; missing fields use —.
               </span>
             </div>
+          ) : null}
+
+          {isDraftRankings ? (
+            <section className="ranking-mode-switch" aria-label="Ranking mode">
+              <button
+                type="button"
+                className={sort === "leagueRank" ? "active" : ""}
+                aria-pressed={sort === "leagueRank"}
+                onClick={() => setSort("leagueRank")}
+              >
+                <Trophy />
+                <span>
+                  <strong>League-Adjusted Ranking</strong>
+                  <small>Best player value for anyone in this league</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                className={sort === "nextPick" ? "active" : ""}
+                aria-pressed={sort === "nextPick"}
+                onClick={() => setSort("nextPick")}
+              >
+                <UserRoundSearch />
+                <span>
+                  <strong>Best for Your Next Pick</strong>
+                  <small>Your roster, needs, controls and the live board</small>
+                </span>
+              </button>
+            </section>
           ) : null}
 
           <section className="player-board-controls" aria-label="Player filters">
@@ -687,6 +1006,9 @@ export function PlayerIntelligencePage({
                 onChange={(event) => setSort(event.target.value as SortMode)}
               >
                 <option value="leagueRank">League-adjusted rank</option>
+                {isDraftRankings ? (
+                  <option value="nextPick">Best for your next pick</option>
+                ) : null}
                 <option value="ecr">Expert rank</option>
                 <option value="adp">ADP</option>
                 <option value="projection">Projected points</option>
@@ -695,24 +1017,91 @@ export function PlayerIntelligencePage({
             </label>
           </section>
 
+          <section className="advanced-ranking-filters" aria-label="Additional player filters">
+            <label>
+              <span>Tier</span>
+              <select
+                value={tier}
+                onChange={(event) =>
+                  setTier(event.target.value === "ALL" ? "ALL" : Number(event.target.value))
+                }
+              >
+                <option value="ALL">All tiers</option>
+                {tiers.map((value) => (
+                  <option key={value} value={value}>Tier {value}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Team</span>
+              <select value={team} onChange={(event) => setTeam(event.target.value)}>
+                <option value="ALL">All teams</option>
+                {playerTeams.map((value) => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Status</span>
+              <select
+                value={playerStatus}
+                onChange={(event) => setPlayerStatus(event.target.value)}
+              >
+                <option value="ALL">All statuses</option>
+                {playerStatuses.map((value) => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+            <label className="availability-filter">
+              <span>Availability</span>
+              <select
+                value={availability}
+                onChange={(event) =>
+                  setAvailability(event.target.value as DraftRankingAvailability)
+                }
+              >
+                <option value="ALL">Show drafted crossed out</option>
+                <option value="AVAILABLE">Hide drafted players</option>
+                <option value="DRAFTED">Drafted players only</option>
+              </select>
+            </label>
+            <span className="filter-result-count">
+              <EyeOff />
+              {filteredPlayers.length} of {boardPlayers.length} shown
+            </span>
+          </section>
+
           {filteredPlayers.length ? (
             <div className={mode === "Players" ? "research-layout" : ""}>
               <section className="player-list-panel" aria-label={`${mode} player list`}>
                 <div className="list-heading">
-                  {mode === "Rankings" ? <Trophy /> : <UserRoundSearch />}
+                  {isDraftRankings ? <Trophy /> : <UserRoundSearch />}
                   <div>
-                    <h2>{position === "ALL" ? "Overall player board" : `${position} player board`}</h2>
-                    <p>{filteredPlayers.length} matching players</p>
+                    <h2>
+                      {sort === "nextPick"
+                        ? "Best for Your Next Pick"
+                        : position === "ALL"
+                          ? "Complete League-Adjusted Ranking"
+                          : `${position} League-Adjusted Ranking`}
+                    </h2>
+                    <p>
+                      {filteredPlayers.length} matching players · drafted rows
+                      are crossed out and never recommended
+                    </p>
                   </div>
                 </div>
                 <PlayerRows
                   players={filteredPlayers}
                   selectedId={selectedId}
+                  drafted={draftState.drafted}
+                  teams={teams}
+                  nextPickRanks={nextPickRanks}
                   onSelect={(playerId) => {
                     setSelectedId((current) =>
                       current === playerId ? null : playerId
                     );
-                    if (mode === "Rankings") return;
+                    if (isDraftRankings) return;
                     document
                       .querySelector(".player-detail")
                       ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -732,12 +1121,18 @@ export function PlayerIntelligencePage({
                 onClick={() => {
                   setQuery("");
                   setPosition("ALL");
+                  setTier("ALL");
+                  setTeam("ALL");
+                  setPlayerStatus("ALL");
+                  setAvailability("ALL");
                 }}
               >
                 Clear filters
               </button>
             </section>
           )}
+
+          {isDraftRankings ? <OffTheBoard entries={offBoardEntries} /> : null}
 
           <footer className="fantasypros-attribution">
             <span>{warRoom.board.attribution}</span>
