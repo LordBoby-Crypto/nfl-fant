@@ -176,6 +176,26 @@ test("recommendations honor avoid and target controls while explaining all facto
   assert.equal(recommendations.every((item) => item.reasons.length === 6), true);
 });
 
+test("avoided players never re-enter recommendations when the pool is small", () => {
+  const smallBoard = board.slice(0, 4);
+  const teams = buildTeamDraftStates({ draft, users, rosters, picks: [] });
+  const recommendations = recommendPlayers({
+    available: smallBoard,
+    allPlayers: smallBoard,
+    teams,
+    userRosterId: 2,
+    cursor: getDraftCursor(draft, [], 2),
+    controls: {
+      watchlist: [],
+      queue: [],
+      target: [],
+      sleeper: [],
+      avoid: smallBoard.map((player) => player.id),
+    },
+  });
+  assert.deepEqual(recommendations, []);
+});
+
 test("pre-draft simulator stops at each user turn", () => {
   const slotMap = createSimulationSlotMap(draft, 2, 3);
   const beforeFirstTurn = simulateToUserTurn({

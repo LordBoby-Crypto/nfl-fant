@@ -225,6 +225,13 @@ selection value, justified and unnecessary reaches, successful waits,
 bye/injury concentrations, undrafted-player ordering, saved-intent waiver
 priorities, Week 1 optimization, and unmatched-player disclosure.
 
+Milestone 15 adds the final draft-day release gate: complete 238-pick
+rehearsals from early, middle, and late slots; outage/reconnect and provider
+fallback checks; expired-session renewal validation; desktop/phone preference
+handoff; duplicate-player prevention; and measured recommendation
+recalculation budgets. Major feature work is frozen until after the draft under
+[`docs/DRAFT_DAY_RELEASE_FREEZE.md`](docs/DRAFT_DAY_RELEASE_FREEZE.md).
+
 The project is configured for GitHub Pages at `/nfl-fant/`.
 
 ## Secure player data
