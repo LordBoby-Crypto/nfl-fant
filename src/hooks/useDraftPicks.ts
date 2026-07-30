@@ -4,6 +4,10 @@ import {
   reconcileDraftPicks,
 } from "../services/sleeper";
 import type { DraftPickTelemetry, SleeperDraftPick } from "../types";
+import {
+  cacheDraftPicks,
+  readCachedDraftPicks,
+} from "../services/offline";
 
 interface DraftPickState {
   picks: SleeperDraftPick[];
@@ -21,12 +25,15 @@ export function useDraftPicks(
   status: "pre_draft" | "drafting" | "complete" | null,
   active: boolean,
 ) {
+  const [cachedAtStart] = useState(() =>
+    draftId ? readCachedDraftPicks(draftId) : null,
+  );
   const [state, setState] = useState<DraftPickState>({
-    picks: [],
+    picks: cachedAtStart?.value ?? [],
     error: null,
     loading: false,
     refreshing: false,
-    fetchedAt: null,
+    fetchedAt: cachedAtStart?.savedAt ?? null,
     telemetry: null,
     consecutiveErrors: 0,
     retainedAfterError: false,
@@ -44,6 +51,7 @@ export function useDraftPicks(
       const result = await getDraftPicksWithTelemetry(draftId);
       setState((current) => {
         const reconciled = reconcileDraftPicks(current.picks, result.picks);
+        cacheDraftPicks(draftId, reconciled.picks);
         return {
           picks: reconciled.picks,
           error: reconciled.regressed
@@ -86,6 +94,7 @@ export function useDraftPicks(
       .then((result) => {
         setState((current) => {
           const reconciled = reconcileDraftPicks(current.picks, result.picks);
+          cacheDraftPicks(draftId, reconciled.picks);
           return {
             picks: reconciled.picks,
             error: reconciled.regressed
@@ -119,6 +128,22 @@ export function useDraftPicks(
       });
     return () => controller.abort();
   }, [active, draftId]);
+
+  useEffect(() => {
+    if (!draftId) return;
+    const cached = readCachedDraftPicks(draftId);
+    if (!cached) return;
+    setState((current) =>
+      current.picks.length
+        ? current
+        : {
+            ...current,
+            picks: cached.value,
+            fetchedAt: cached.savedAt,
+            retainedAfterError: true,
+          },
+    );
+  }, [draftId]);
 
   useEffect(() => {
     if (!active || !draftId || !status) return;

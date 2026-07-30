@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Clock3,
   ExternalLink,
+  HardDrive,
   LayoutDashboard,
   Menu,
   RefreshCw,
@@ -35,6 +36,10 @@ import { TradeAnalyzerPage } from "./features/trades/TradeAnalyzerPage";
 import { WeeklyMatchupPage } from "./features/weekly/WeeklyMatchupPage";
 import { PreflightReport } from "./features/preflight/PreflightReport";
 import {
+  SafetyCenterPage,
+  SessionExpiryBanner,
+} from "./features/safety/SafetyCenterPage";
+import {
   getDraftPosition,
   USERNAME,
 } from "./services/sleeper";
@@ -48,7 +53,8 @@ type View =
   | "My Team"
   | "Waivers"
   | "Trades"
-  | "Matchups";
+  | "Matchups"
+  | "Safety";
 type StatusView = Exclude<
   View,
   | "Overview"
@@ -58,6 +64,7 @@ type StatusView = Exclude<
   | "My Team"
   | "Waivers"
   | "Trades"
+  | "Safety"
 >;
 
 const NAV_ITEMS: Array<{
@@ -72,6 +79,7 @@ const NAV_ITEMS: Array<{
   { name: "Waivers", icon: Sparkles },
   { name: "Trades", icon: WalletCards },
   { name: "Matchups", icon: UsersRound },
+  { name: "Safety", icon: HardDrive },
 ];
 
 function formatDraftDate(startTime: number | null) {
@@ -309,7 +317,8 @@ function App() {
       view === "My Team" ||
       view === "Waivers" ||
       view === "Trades" ||
-      view === "Matchups",
+      view === "Matchups" ||
+      view === "Safety",
     view === "Matchups" ? weeklyOutlook.data?.currentWeek ?? 1 : null,
   );
   const waiverActivity = useWaiverActivity(
@@ -330,8 +339,8 @@ function App() {
   const visibleNavItems = useMemo(
     () =>
       focusedDraftActive
-        ? NAV_ITEMS.filter(
-            (item) => !["Waivers", "Trades", "Matchups"].includes(item.name),
+          ? NAV_ITEMS.filter(
+            (item) => !["Waivers", "Trades", "Matchups", "Safety"].includes(item.name),
           )
         : NAV_ITEMS,
     [focusedDraftActive],
@@ -424,6 +433,7 @@ function App() {
       </header>
 
       <div className={`content ${view === "Overview" ? "" : "single-page"}`}>
+        <SessionExpiryBanner warRoom={warRoom} />
         {error ? (
           <div className="inline-error">
             Latest refresh failed. Showing the last successful Sleeper data.
@@ -520,6 +530,11 @@ function App() {
               warRoom.refresh();
             }}
           />
+        ) : view === "Safety" ? (
+          <SafetyCenterPage
+            syncAvailable={Boolean(intelligence.data?.features?.secureSync)}
+            warRoom={warRoom}
+          />
         ) : (
           <StatusPage
             view={view}
@@ -530,7 +545,7 @@ function App() {
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         {visibleNavItems.filter((item) =>
-          ["Overview", "Draft Room", "My Team", "Waivers", "Trades", "Matchups"].includes(
+          ["Overview", "Draft Room", "My Team", "Waivers", "Trades", "Matchups", "Safety"].includes(
             item.name,
           ),
         ).map((item) => {
@@ -553,6 +568,8 @@ function App() {
                       ? "Trades"
                     : item.name === "Matchups"
                       ? "Matchup"
+                    : item.name === "Safety"
+                      ? "Safety"
                     : item.name}
               </span>
             </button>

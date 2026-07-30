@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { getLeagueSnapshotWithTelemetry } from "../services/sleeper";
+import {
+  cacheLeagueSnapshot,
+  readCachedLeagueSnapshot,
+} from "../services/offline";
 import type { LeagueSnapshot, LeagueSnapshotTelemetry } from "../types";
 
 interface SnapshotState {
@@ -12,13 +16,14 @@ interface SnapshotState {
 }
 
 export function useLeagueSnapshot() {
+  const [cachedAtStart] = useState(readCachedLeagueSnapshot);
   const [state, setState] = useState<SnapshotState>({
-    data: null,
+    data: cachedAtStart?.value ?? null,
     error: null,
     loading: true,
     refreshing: false,
     telemetry: null,
-    lastSuccessfulAt: null,
+    lastSuccessfulAt: cachedAtStart?.savedAt ?? null,
   });
 
   const refresh = useCallback(async (silent = false) => {
@@ -31,6 +36,7 @@ export function useLeagueSnapshot() {
 
     try {
       const result = await getLeagueSnapshotWithTelemetry();
+      cacheLeagueSnapshot(result.snapshot);
       setState({
         data: result.snapshot,
         error: null,
@@ -57,6 +63,7 @@ export function useLeagueSnapshot() {
 
     getLeagueSnapshotWithTelemetry(controller.signal)
       .then((result) => {
+        cacheLeagueSnapshot(result.snapshot);
         setState({
           data: result.snapshot,
           error: null,
@@ -68,8 +75,8 @@ export function useLeagueSnapshot() {
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setState({
-          data: null,
+        setState((current) => ({
+          data: current.data,
           error:
             error instanceof Error
               ? error.message
@@ -77,8 +84,8 @@ export function useLeagueSnapshot() {
           loading: false,
           refreshing: false,
           telemetry: null,
-          lastSuccessfulAt: null,
-        });
+          lastSuccessfulAt: current.lastSuccessfulAt,
+        }));
       });
 
     return () => controller.abort();

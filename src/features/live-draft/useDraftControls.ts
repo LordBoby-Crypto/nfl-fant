@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 import type { DraftControlKind, DraftControlState } from "./engine";
+import { normalizeDraftControls } from "../safety/model";
 
-const STORAGE_KEY = "war-room.draft-controls.v1";
+export const DRAFT_CONTROLS_STORAGE_KEY = "war-room.draft-controls.v1";
 const EMPTY_CONTROLS: DraftControlState = {
   watchlist: [],
   queue: [],
@@ -10,24 +11,26 @@ const EMPTY_CONTROLS: DraftControlState = {
   avoid: [],
 };
 
-function readControls(): DraftControlState {
+export function readDraftControls(): DraftControlState {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as
-      Partial<DraftControlState>;
-    return {
-      watchlist: Array.isArray(value.watchlist) ? value.watchlist : [],
-      queue: Array.isArray(value.queue) ? value.queue : [],
-      target: Array.isArray(value.target) ? value.target : [],
-      sleeper: Array.isArray(value.sleeper) ? value.sleeper : [],
-      avoid: Array.isArray(value.avoid) ? value.avoid : [],
-    };
+    return normalizeDraftControls(
+      JSON.parse(localStorage.getItem(DRAFT_CONTROLS_STORAGE_KEY) ?? "{}"),
+    );
   } catch {
     return EMPTY_CONTROLS;
   }
 }
 
+function writeControls(controls: DraftControlState) {
+  try {
+    localStorage.setItem(DRAFT_CONTROLS_STORAGE_KEY, JSON.stringify(controls));
+  } catch {
+    // Keep the active tab usable when browser storage is unavailable.
+  }
+}
+
 export function useDraftControls() {
-  const [controls, setControls] = useState<DraftControlState>(readControls);
+  const [controls, setControls] = useState<DraftControlState>(readDraftControls);
 
   const update = useCallback(
     (kind: DraftControlKind, playerId: string) => {
@@ -39,7 +42,7 @@ export function useDraftControls() {
             ? current[kind].filter((id) => id !== playerId)
             : [...current[kind], playerId],
         };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        writeControls(next);
         return next;
       });
     },
@@ -54,10 +57,16 @@ export function useDraftControls() {
       const queue = [...current.queue];
       [queue[index], queue[target]] = [queue[target], queue[index]];
       const next = { ...current, queue };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      writeControls(next);
       return next;
     });
   }, []);
 
-  return { controls, moveQueue, toggle: update };
+  const replace = useCallback((value: DraftControlState) => {
+    const next = normalizeDraftControls(value);
+    writeControls(next);
+    setControls(next);
+  }, []);
+
+  return { controls, moveQueue, replace, toggle: update };
 }

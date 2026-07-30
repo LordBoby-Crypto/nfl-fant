@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearWarRoomSession,
   createWarRoomSession,
@@ -12,6 +12,11 @@ import {
   buildPlayerBoard,
   type PlayerBoardData,
 } from "./model";
+import {
+  cachePlayerBoard,
+  readCachedPlayerBoard,
+  selectRecoverablePlayerBoard,
+} from "../../services/offline";
 
 const DATASETS: IntelligenceDataset[] = [
   "rankings",
@@ -28,7 +33,11 @@ export function useWarRoom(
   const [session, setSession] = useState<WarRoomSession | null>(() =>
     readWarRoomSession(),
   );
-  const [board, setBoard] = useState<PlayerBoardData | null>(null);
+  const [cachedAtStart] = useState(readCachedPlayerBoard);
+  const [board, setBoard] = useState<PlayerBoardData | null>(
+    () => cachedAtStart?.value ?? null,
+  );
+  const boardRef = useRef(board);
   const [weeklyBoard, setWeeklyBoard] = useState<PlayerBoardData | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -36,11 +45,14 @@ export function useWarRoom(
   const [loadingData, setLoadingData] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [lastSuccessfulAt, setLastSuccessfulAt] = useState<number | null>(null);
+  const [usingCachedBoard, setUsingCachedBoard] = useState(Boolean(cachedAtStart));
+  const [cachedBoardSavedAt, setCachedBoardSavedAt] = useState<number | null>(
+    cachedAtStart?.savedAt ?? null,
+  );
 
   const lock = useCallback(() => {
     clearWarRoomSession();
     setSession(null);
-    setBoard(null);
     setWeeklyBoard(null);
     setLoginError(null);
     setDataError(null);
@@ -68,6 +80,10 @@ export function useWarRoom(
   const refresh = useCallback(() => {
     setRefreshKey((value) => value + 1);
   }, []);
+
+  useEffect(() => {
+    boardRef.current = board;
+  }, [board]);
 
   useEffect(() => {
     if (!active || !session) return;
@@ -119,7 +135,21 @@ export function useWarRoom(
         }
 
         const nextBoard = buildPlayerBoard(responses, failures);
-        setBoard(nextBoard);
+        const hasFreshRankings = responses.some(
+          (response) => response.dataset === "rankings",
+        );
+        const selection = selectRecoverablePlayerBoard(
+          boardRef.current,
+          nextBoard,
+          hasFreshRankings,
+        );
+        boardRef.current = selection.value;
+        setBoard(selection.value);
+        setUsingCachedBoard(selection.usingCachedBoard);
+        if (hasFreshRankings && nextBoard.players.length) {
+          cachePlayerBoard(nextBoard);
+          setCachedBoardSavedAt(Date.now());
+        }
         if (responses.length) setLastSuccessfulAt(Date.now());
         const weeklyProjection = responses.find(
           (response) => response.dataset === "weekly-projections",
@@ -196,5 +226,7 @@ export function useWarRoom(
     refresh,
     sessionExpiresAt: session?.expiresAt ?? null,
     lastSuccessfulAt,
+    usingCachedBoard,
+    cachedBoardSavedAt,
   };
 }
