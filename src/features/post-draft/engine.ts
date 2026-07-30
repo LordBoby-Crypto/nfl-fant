@@ -470,7 +470,6 @@ export function buildPostDraftReport({
   controls,
 }: BuildPostDraftReportInput): PostDraftReport | null {
   const draftPicks = picks
-    .filter((pick) => pick.is_keeper !== true)
     .sort((left, right) => left.pick_no - right.pick_no);
   const completedSnapshot = snapshotAtDraftCompletion(snapshot, draftPicks);
   const teams = analyzeLeagueTeams({

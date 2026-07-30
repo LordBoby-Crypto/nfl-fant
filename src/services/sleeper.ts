@@ -101,20 +101,103 @@ export async function getLeagueSnapshotWithTelemetry(
     getJsonWithTelemetry<Draft>(`/draft/${leagueResult.value.draft_id}`, signal),
   ]);
 
-  return {
-    snapshot: {
+  const snapshot = normalizeLeagueSnapshot({
       league: leagueResult.value,
       draft: draftResult.value,
       users: usersResult.value,
       rosters: rostersResult.value,
       fetchedAt: Date.now(),
-    },
+    });
+
+  return {
+    snapshot,
     telemetry: {
       league: leagueResult,
       draft: draftResult,
       users: usersResult,
       rosters: rostersResult,
       totalDurationMs: Date.now() - startedAt,
+    },
+  };
+}
+
+export function normalizeLeagueSnapshot(
+  snapshot: LeagueSnapshot,
+): LeagueSnapshot {
+  const counts = snapshot.league.roster_positions.reduce<Record<string, number>>(
+    (result, raw) => {
+      const slot = raw.toUpperCase();
+      result[slot] = (result[slot] ?? 0) + 1;
+      return result;
+    },
+    {},
+  );
+  const count = (...slots: string[]) =>
+    slots.reduce((total, slot) => total + (counts[slot] ?? 0), 0);
+  const settings = snapshot.draft.settings;
+  return {
+    ...snapshot,
+    draft: {
+      ...snapshot.draft,
+      settings: {
+        ...settings,
+        teams:
+          Number(settings.teams) ||
+          Number(snapshot.league.settings.num_teams) ||
+          snapshot.league.total_rosters,
+        rounds:
+          Number(settings.rounds) ||
+          count(
+            "QB",
+            "RB",
+            "FB",
+            "WR",
+            "TE",
+            "FLEX",
+            "WRRB_FLEX",
+            "REC_FLEX",
+            "WRRBTE_FLEX",
+            "SUPER_FLEX",
+            "OP",
+            "K",
+            "DEF",
+            "DST",
+            "DL",
+            "DE",
+            "DT",
+            "LB",
+            "DB",
+            "CB",
+            "S",
+            "IDP_FLEX",
+            "BN",
+            "BENCH",
+          ),
+        slots_qb: count("QB"),
+        slots_rb: count("RB", "FB"),
+        slots_wr: count("WR"),
+        slots_te: count("TE"),
+        slots_flex: count(
+          "FLEX",
+          "WRRB_FLEX",
+          "REC_FLEX",
+          "WRRBTE_FLEX",
+        ),
+        slots_super_flex: count("SUPER_FLEX", "OP"),
+        slots_idp_flex: count(
+          "DL",
+          "DE",
+          "DT",
+          "LB",
+          "DB",
+          "CB",
+          "S",
+          "IDP_FLEX",
+        ),
+        slots_k: count("K"),
+        slots_def: count("DEF", "DST"),
+        slots_bn: count("BN", "BENCH"),
+      },
     },
   };
 }
@@ -400,7 +483,10 @@ export async function getSleeperPlayersByIds(
 }
 
 export function getUserRoster(snapshot: LeagueSnapshot): Roster | undefined {
-  return snapshot.rosters.find((roster) => roster.owner_id === USER_ID);
+  return snapshot.rosters.find(
+    (roster) =>
+      roster.owner_id === USER_ID || roster.co_owners?.includes(USER_ID),
+  );
 }
 
 export function getDraftPosition(

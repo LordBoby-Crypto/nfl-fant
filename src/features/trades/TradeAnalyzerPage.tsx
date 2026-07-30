@@ -562,9 +562,9 @@ export function TradeAnalyzerPage({
           <WalletCards />
           <h2>Trade analysis begins after your draft</h2>
           <p>
-            This new redraft league does not have rostered players yet. After
-            Sleeper records the draft, you can build an offer and see how both
-            teams change—not just whether the player values look close.
+            Sleeper does not have rostered players yet. After keepers or draft
+            picks are recorded, you can build an offer and see how both teams
+            change—not just whether the player values look close.
           </p>
           <span>
             <UsersRound /> {snapshot.league.total_rosters} teams

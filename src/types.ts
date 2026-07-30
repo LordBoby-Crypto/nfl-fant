@@ -25,6 +25,7 @@ export interface League {
     pass_int?: number;
     [key: string]: number | undefined;
   };
+  metadata?: Record<string, string | null>;
 }
 
 export interface Draft {
@@ -47,7 +48,11 @@ export interface Draft {
     slots_k: number;
     slots_def: number;
     slots_bn: number;
+    slots_super_flex?: number;
+    slots_idp_flex?: number;
+    [key: string]: number | undefined;
   };
+  metadata?: Record<string, string | null>;
 }
 
 export interface SleeperDraftPick {
@@ -86,6 +91,8 @@ export interface LeagueUser {
   user_id: string;
   display_name: string;
   avatar: string | null;
+  username?: string;
+  is_owner?: boolean | null;
   metadata: {
     team_name?: string;
   } | null;
@@ -97,6 +104,8 @@ export interface Roster {
   players: string[];
   keepers: string[];
   reserve: string[];
+  taxi?: string[];
+  co_owners?: string[] | null;
   starters: string[];
   settings: {
     wins: number;

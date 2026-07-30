@@ -403,14 +403,14 @@ export function WaiverAssistantPage({
           <Sparkles />
           <h2>Waiver recommendations begin after your draft</h2>
           <p>
-            This is a new redraft league and your Sleeper roster is still empty.
-            Once picks are recorded, the assistant will compare every unrostered
-            player against your actual lineup, depth, FAAB balance and league bid
-            history.
+            Sleeper has not assigned any keepers or draft picks to your roster
+            yet. Once players are recorded, the assistant will compare every
+            unrostered player against your actual lineup, depth, FAAB balance
+            and league bid history.
           </p>
           <span>
             <BadgeDollarSign /> ${snapshot.league.settings.waiver_budget} starting FAAB
-            <ShieldCheck /> No carryover players
+            <ShieldCheck /> Sleeper roster synchronized
           </span>
         </section>
       ) : null}

@@ -17,8 +17,9 @@ import {
 } from "lucide-react";
 import type { useDraftPicks } from "../../hooks/useDraftPicks";
 import { useSleeperPlayers } from "../../hooks/useSleeperPlayers";
-import { getUserRoster } from "../../services/sleeper";
+import { getUserRoster, USER_ID } from "../../services/sleeper";
 import type { LeagueSnapshot } from "../../types";
+import { buildLeagueSettingsModel } from "../league-settings/model";
 import type { useWarRoom } from "../player-intelligence/useWarRoom";
 import { analyzeLeagueTeams, type TeamAnalysis } from "./engine";
 
@@ -297,6 +298,7 @@ export function MyTeamPage({
   onRefresh: () => void;
 }) {
   const userRoster = getUserRoster(snapshot);
+  const settingsModel = buildLeagueSettingsModel(snapshot, USER_ID);
   const playerIds = useMemo(
     () => [
       ...snapshot.rosters.flatMap((roster) => roster.players ?? []),
@@ -310,7 +312,7 @@ export function MyTeamPage({
       warRoom.board
         ? analyzeLeagueTeams({
             snapshot,
-            picks: draftPicks.picks.filter((pick) => pick.is_keeper !== true),
+            picks: draftPicks.picks,
             board: warRoom.board.players,
             sleeperPlayers: sleeperPlayers.players,
           })
@@ -352,14 +354,15 @@ export function MyTeamPage({
           <Shield />
           <h2>Your team will build itself during the draft</h2>
           <p>
-            This is a new redraft league, so there are no carryover players.
-            As Sleeper records your picks, this page will optimize your lineup,
-            grade every position and compare your roster with all 14 teams.
+            Sleeper has not assigned any players to your roster yet. As
+            keepers and draft picks appear, this page will optimize your
+            lineup, grade every position and compare your roster with all{" "}
+            {settingsModel.teamCount} teams.
           </p>
           <span>
             <UsersRound /> {snapshot.league.total_rosters} teams
             <Gauge /> {snapshot.league.roster_positions.length} roster slots
-            <BarChart3 /> Full PPR
+            <BarChart3 /> {settingsModel.scoringLabel}
           </span>
         </section>
       ) : null}

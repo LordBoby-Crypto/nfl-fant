@@ -83,8 +83,31 @@ function snapshot(): LeagueSnapshot {
         slots_bn: 8,
       },
     },
-    users: [],
-    rosters: [],
+    users: [
+      {
+        user_id: "1340097308699664384",
+        display_name: "KingBoby",
+        avatar: null,
+        metadata: null,
+      },
+    ],
+    rosters: [
+      {
+        roster_id: 12,
+        owner_id: "1340097308699664384",
+        players: [],
+        keepers: [],
+        reserve: [],
+        starters: [],
+        settings: {
+          wins: 0,
+          losses: 0,
+          ties: 0,
+          waiver_position: 1,
+          waiver_budget_used: 0,
+        },
+      },
+    ],
     fetchedAt: NOW - 10_000,
   };
 }

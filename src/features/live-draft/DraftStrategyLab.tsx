@@ -44,7 +44,7 @@ const TABS: Array<{
 }> = [
   { id: "forecast", label: "Forecast", icon: BrainCircuit },
   { id: "simulations", label: "Simulations", icon: BarChart3 },
-  { id: "plans", label: "14-slot plans", icon: Target },
+  { id: "plans", label: "Slot plans", icon: Target },
 ];
 
 function ForecastPanel({
@@ -232,7 +232,7 @@ function SlotPlansPanel({
       <header className="strategy-panel-heading">
         <span>
           <h3>Plan for every draft slot</h3>
-          <p>Complete redraft routes using current ADP, ECR and roster construction.</p>
+          <p>Complete league routes using current ADP, ECR and Sleeper roster construction.</p>
         </span>
         <small>All {plans.length} positions ready</small>
       </header>
@@ -329,7 +329,7 @@ export function DraftStrategyLab({
   const initialSlot =
     mappedSlot ??
     getUserDraftSlot(draft, rosters.find((roster) => roster.roster_id === userRosterId)?.owner_id ?? "", userRosterId) ??
-    7;
+    Math.max(1, Math.ceil(draft.settings.teams / 2));
   const [tab, setTab] = useState<StrategyTab>("forecast");
   const [analysisSlot, setAnalysisSlot] = useState(initialSlot);
   const activeAnalysisSlot = mappedSlot ?? analysisSlot;
@@ -456,7 +456,9 @@ export function DraftStrategyLab({
             onClick={() => setTab(id)}
           >
             <Icon />
-            <span>{label}</span>
+            <span>
+              {id === "plans" ? `${draft.settings.teams}-slot plans` : label}
+            </span>
           </button>
         ))}
       </nav>

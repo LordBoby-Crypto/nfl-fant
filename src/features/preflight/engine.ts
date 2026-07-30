@@ -5,6 +5,8 @@ import type {
   LeagueSnapshotTelemetry,
 } from "../../types";
 import type { PlayerMatchCoverage } from "../../services/sleeper";
+import { USER_ID } from "../../services/sleeper.ts";
+import { buildLeagueSettingsModel } from "../league-settings/model.ts";
 
 export type ReadinessLevel = "green" | "yellow" | "red";
 
@@ -93,33 +95,26 @@ function datasetTime(board: PlayerBoardData | null, dataset: "rankings" | "proje
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function expectedDraftRounds(snapshot: LeagueSnapshot) {
-  const nonDraftSlots = new Set(["IR", "RESERVE", "TAXI"]);
-  return snapshot.league.roster_positions.filter(
-    (slot) => !nonDraftSlots.has(slot.toUpperCase()),
-  ).length;
-}
-
 function settingCheck(snapshot: LeagueSnapshot): ReadinessCheck {
-  const expectedRounds = expectedDraftRounds(snapshot);
-  const roundsMatch = snapshot.draft.settings.rounds === expectedRounds;
-  const teamsMatch =
-    snapshot.draft.settings.teams === snapshot.league.total_rosters &&
-    snapshot.league.settings.num_teams === snapshot.league.total_rosters;
-  const redraft =
-    snapshot.league.settings.max_keepers === 0 &&
-    snapshot.draft.type === "snake";
-  const ppr = snapshot.league.scoring_settings.rec === 1;
-  const ready = roundsMatch && teamsMatch && redraft && ppr;
+  const model = buildLeagueSettingsModel(snapshot, USER_ID);
+  const blocked = model.limitations.some(
+    (limitation) => limitation.level === "blocked",
+  );
+  const limited = model.limitations.length > 0;
   return {
     id: "roster-settings",
     group: "Draft setup",
-    label: "Roster and scoring settings",
-    level: ready ? "green" : "red",
-    summary: ready
-      ? `${snapshot.league.total_rosters} teams · Full PPR · redraft`
-      : "Sleeper settings conflict with the War Room model",
-    detail: `${snapshot.draft.settings.rounds}/${expectedRounds} draft rounds · ${snapshot.draft.settings.teams}/${snapshot.league.total_rosters} teams · ${snapshot.league.settings.max_keepers} keepers.`,
+    label: "Adaptive Sleeper model",
+    level: blocked ? "red" : limited ? "yellow" : "green",
+    summary: blocked
+      ? "A Sleeper feature cannot be modeled safely"
+      : limited
+        ? "Sleeper settings imported with a visible limitation"
+        : "Every current league structure setting is modeled",
+    detail: `${model.teamCount} teams · ${model.rounds} rounds · ${model.scoringLabel} · ${model.flexSlots} FLEX · ${model.superFlexSlots} SUPER_FLEX · ${model.idpSlots} IDP · ${model.keeperLimit} keeper max · ${model.taxiSlots} taxi. ${
+      model.limitations.map((limitation) => limitation.detail).join(" ") ||
+      "No Sleeper setting conflict."
+    }`,
     lastSuccessfulAt: snapshot.fetchedAt,
   };
 }
@@ -280,12 +275,10 @@ export function buildReadinessReport(input: PreflightInput): ReadinessReport {
       id: "draft-rounds",
       group: "Draft setup",
       label: "Rounds",
-      level:
-        input.snapshot.draft.settings.rounds === expectedDraftRounds(input.snapshot)
-          ? "green"
-          : "red",
-      summary: `${input.snapshot.draft.settings.rounds} configured · ${expectedDraftRounds(input.snapshot)} expected`,
-      detail: "Rounds must match all draftable starter and bench roster slots.",
+      level: input.snapshot.draft.settings.rounds > 0 ? "green" : "red",
+      summary: `${input.snapshot.draft.settings.rounds} rounds imported from Sleeper`,
+      detail:
+        "Sleeper’s draft round count is authoritative, including keeper and custom-roster leagues.",
       lastSuccessfulAt: input.snapshot.fetchedAt,
     },
     {

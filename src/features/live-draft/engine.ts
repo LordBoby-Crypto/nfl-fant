@@ -23,7 +23,7 @@ export interface DraftControlState {
 }
 
 export interface PositionNeed {
-  position: DraftPosition | "FLEX";
+  position: DraftPosition | "FLEX" | "SUPER_FLEX";
   missing: number;
   urgency: "urgent" | "need" | "depth" | "filled";
 }
@@ -248,6 +248,21 @@ function calculateNeeds(
     missing: flexMissing,
     urgency: flexMissing ? "need" : "filled",
   });
+  const superFlexEligibleFilled =
+    Math.max(0, counts.QB - requirements.QB) +
+    Math.max(0, counts.RB - requirements.RB) +
+    Math.max(0, counts.WR - requirements.WR) +
+    Math.max(0, counts.TE - requirements.TE) -
+    Math.min(draft.settings.slots_flex, coreFlexFilled);
+  const superFlexMissing = Math.max(
+    0,
+    (draft.settings.slots_super_flex ?? 0) - superFlexEligibleFilled,
+  );
+  needs.push({
+    position: "SUPER_FLEX",
+    missing: superFlexMissing,
+    urgency: superFlexMissing ? "urgent" : "filled",
+  });
   return needs;
 }
 
@@ -423,6 +438,9 @@ function needWeight(
 ) {
   const exact = userTeam.needs.find((need) => need.position === player.position);
   const flex = userTeam.needs.find((need) => need.position === "FLEX");
+  const superFlex = userTeam.needs.find(
+    (need) => need.position === "SUPER_FLEX",
+  );
   let score = exact?.missing ? 24 + exact.missing * 8 : -5;
   if (
     flex?.missing &&
@@ -432,10 +450,24 @@ function needWeight(
   ) {
     score += 8;
   }
+  if (
+    superFlex?.missing &&
+    (player.position === "QB" ||
+      player.position === "RB" ||
+      player.position === "WR" ||
+      player.position === "TE")
+  ) {
+    score += player.position === "QB" ? 26 : 8;
+  }
   if ((player.position === "K" || player.position === "DST") && round < 10) {
     score -= 32;
   }
-  if (player.position === "QB" && userTeam.counts.QB >= 1 && round < 9) {
+  if (
+    player.position === "QB" &&
+    userTeam.counts.QB >= 1 &&
+    !(superFlex?.missing) &&
+    round < 9
+  ) {
     score -= 24;
   }
   return score;
@@ -605,7 +637,15 @@ export function cpuPlayerScore(
   if ((player.position === "K" || player.position === "DST") && round < 11) {
     score -= 80;
   }
-  if (player.position === "QB" && team.counts.QB >= 1 && round < 10) score -= 45;
+  const superFlex = team.needs.find((item) => item.position === "SUPER_FLEX");
+  if (
+    player.position === "QB" &&
+    team.counts.QB >= 1 &&
+    !superFlex?.missing &&
+    round < 10
+  ) {
+    score -= 45;
+  }
   return score;
 }
 

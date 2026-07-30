@@ -43,9 +43,18 @@ import { PostDraftReport } from "./features/post-draft/PostDraftReport";
 import { shouldAutoOpenPostDraft } from "./features/post-draft/engine";
 import {
   getDraftPosition,
+  USER_ID,
   USERNAME,
 } from "./services/sleeper";
 import type { LeagueSnapshot } from "./types";
+import {
+  LeagueSettingsPanel,
+  SettingsChangeNotice,
+} from "./features/league-settings/LeagueSettingsPanel";
+import {
+  buildLeagueSettingsModel,
+  type LeagueSettingsModel,
+} from "./features/league-settings/model";
 
 type View =
   | "Overview"
@@ -108,6 +117,7 @@ function Overview({
   preflightRefreshKey,
   onRefresh,
   onOpenDraft,
+  settingsModel,
 }: {
   leagueState: ReturnType<typeof useLeagueSnapshot>;
   draftPicks: ReturnType<typeof useDraftPicks>;
@@ -117,6 +127,7 @@ function Overview({
   preflightRefreshKey: number;
   onRefresh: () => void;
   onOpenDraft: () => void;
+  settingsModel: LeagueSettingsModel;
 }) {
   const snapshot = leagueState.data;
   if (!snapshot) return null;
@@ -187,8 +198,8 @@ function Overview({
               <span>teams</span>
             </div>
             <div className="fact">
-              <span className="letter-icon">PPR</span>
-              <strong>Full PPR</strong>
+              <span className="letter-icon">PTS</span>
+              <strong>{settingsModel.scoringLabel}</strong>
             </div>
             <div className="fact">
               <Zap />
@@ -219,6 +230,11 @@ function Overview({
           </div>
         </section>
 
+        <LeagueSettingsPanel
+          model={settingsModel}
+          fetchedAt={snapshot.fetchedAt}
+        />
+
         <PreflightReport
           league={leagueState}
           draftPicks={draftPicks}
@@ -234,11 +250,14 @@ function Overview({
           <div className="strategy-row">
             <Target />
             <div>
-              <strong>RB/WR scarcity in a 14-team league</strong>
+              <strong>
+                Adaptive scarcity in a {settingsModel.teamCount}-team league
+              </strong>
               <p>
-                Starting-caliber running backs and receivers disappear quickly.
-                We will adjust your board to the actual draft slot once Sleeper
-                publishes it.
+                The War Room uses Sleeper’s current starters, FLEX and
+                SUPER_FLEX slots, bench depth, keepers and turn spacing. It
+                rebuilds again when Sleeper publishes your draft slot or a
+                commissioner changes the league.
               </p>
             </div>
           </div>
@@ -353,6 +372,10 @@ function App() {
       view === "Matchups",
   );
   const focusedDraftActive = data?.draft.status === "drafting";
+  const settingsModel = useMemo(
+    () => (data ? buildLeagueSettingsModel(data, USER_ID) : null),
+    [data],
+  );
   const previousDraftStatus = useRef(data?.draft.status ?? null);
   const visibleNavItems = useMemo(
     () =>
@@ -394,6 +417,7 @@ function App() {
       </div>
     );
   }
+  if (!settingsModel) return null;
 
   return (
     <div className={`app-shell ${focusedDraftActive ? "focused-draft-active" : ""}`}>
@@ -453,7 +477,7 @@ function App() {
         </div>
         <div className="user-state">
           <span className="avatar">KB</span>
-          <span>{USERNAME}</span>
+          <span>{settingsModel.user.displayName || USERNAME}</span>
         </div>
       </header>
 
@@ -464,6 +488,10 @@ function App() {
             : "single-page"
         }`}
       >
+        <SettingsChangeNotice
+          changes={league.settingsChanges}
+          onDismiss={league.dismissSettingsChanges}
+        />
         <SessionExpiryBanner warRoom={warRoom} />
         {error ? (
           <div className="inline-error">
@@ -491,6 +519,7 @@ function App() {
               warRoom.refresh();
             }}
             onOpenDraft={() => setView("Draft Room")}
+            settingsModel={settingsModel}
           />
         ) : view === "Draft Room" ? (
           <LiveDraftRoom
@@ -501,13 +530,16 @@ function App() {
               void refresh();
               void draftPicks.refresh();
             }}
+            onEnsureSettingsFresh={league.ensureFresh}
             warRoom={warRoom}
           />
         ) : view === "Rankings" || view === "Players" ? (
           <PlayerIntelligencePage
             leagueName={data.league.name}
             mode={view}
+            scoringLabel={settingsModel.scoringLabel}
             season={data.league.season}
+            draftFormat={settingsModel.draftFormat}
             status={intelligence.data}
             warRoom={warRoom}
           />

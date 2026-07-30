@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
-import { getLeagueSnapshotWithTelemetry } from "../services/sleeper";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  getLeagueSnapshotWithTelemetry,
+  USER_ID,
+} from "../services/sleeper";
 import {
   cacheLeagueSnapshot,
   readCachedLeagueSnapshot,
 } from "../services/offline";
 import type { LeagueSnapshot, LeagueSnapshotTelemetry } from "../types";
+import {
+  buildLeagueSettingsModel,
+  diffLeagueSettings,
+  type SettingsChange,
+} from "../features/league-settings/model";
 
 interface SnapshotState {
   data: LeagueSnapshot | null;
@@ -13,6 +21,7 @@ interface SnapshotState {
   refreshing: boolean;
   telemetry: LeagueSnapshotTelemetry | null;
   lastSuccessfulAt: number | null;
+  settingsChanges: SettingsChange[];
 }
 
 export function useLeagueSnapshot() {
@@ -24,9 +33,14 @@ export function useLeagueSnapshot() {
     refreshing: false,
     telemetry: null,
     lastSuccessfulAt: cachedAtStart?.savedAt ?? null,
+    settingsChanges: [],
   });
+  const dataRef = useRef(state.data);
+  const refreshingRef = useRef(false);
 
   const refresh = useCallback(async (silent = false) => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
     setState((current) => ({
       ...current,
       error: null,
@@ -37,13 +51,25 @@ export function useLeagueSnapshot() {
     try {
       const result = await getLeagueSnapshotWithTelemetry();
       cacheLeagueSnapshot(result.snapshot);
-      setState({
-        data: result.snapshot,
-        error: null,
-        loading: false,
-        refreshing: false,
-        telemetry: result.telemetry,
-        lastSuccessfulAt: result.snapshot.fetchedAt,
+      setState((current) => {
+        const previous = current.data
+          ? buildLeagueSettingsModel(current.data, USER_ID)
+          : null;
+        const next = buildLeagueSettingsModel(result.snapshot, USER_ID);
+        const changes =
+          previous && previous.fingerprint !== next.fingerprint
+            ? diffLeagueSettings(previous, next)
+            : current.settingsChanges;
+        dataRef.current = result.snapshot;
+        return {
+          data: result.snapshot,
+          error: null,
+          loading: false,
+          refreshing: false,
+          telemetry: result.telemetry,
+          lastSuccessfulAt: result.snapshot.fetchedAt,
+          settingsChanges: changes,
+        };
       });
     } catch (error) {
       setState((current) => ({
@@ -55,6 +81,8 @@ export function useLeagueSnapshot() {
         loading: false,
         refreshing: false,
       }));
+    } finally {
+      refreshingRef.current = false;
     }
   }, []);
 
@@ -64,13 +92,24 @@ export function useLeagueSnapshot() {
     getLeagueSnapshotWithTelemetry(controller.signal)
       .then((result) => {
         cacheLeagueSnapshot(result.snapshot);
-        setState({
-          data: result.snapshot,
-          error: null,
-          loading: false,
-          refreshing: false,
-          telemetry: result.telemetry,
-          lastSuccessfulAt: result.snapshot.fetchedAt,
+        setState((current) => {
+          const previous = current.data
+            ? buildLeagueSettingsModel(current.data, USER_ID)
+            : null;
+          const next = buildLeagueSettingsModel(result.snapshot, USER_ID);
+          dataRef.current = result.snapshot;
+          return {
+            data: result.snapshot,
+            error: null,
+            loading: false,
+            refreshing: false,
+            telemetry: result.telemetry,
+            lastSuccessfulAt: result.snapshot.fetchedAt,
+            settingsChanges:
+              previous && previous.fingerprint !== next.fingerprint
+                ? diffLeagueSettings(previous, next)
+                : current.settingsChanges,
+          };
         });
       })
       .catch((error) => {
@@ -85,11 +124,18 @@ export function useLeagueSnapshot() {
           refreshing: false,
           telemetry: null,
           lastSuccessfulAt: current.lastSuccessfulAt,
+          settingsChanges: current.settingsChanges,
         }));
       });
 
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const reconnect = () => void refresh(false);
+    window.addEventListener("online", reconnect);
+    return () => window.removeEventListener("online", reconnect);
+  }, [refresh]);
 
   useEffect(() => {
     if (!state.data) return;
@@ -98,5 +144,24 @@ export function useLeagueSnapshot() {
     return () => window.clearInterval(timer);
   }, [refresh, state.data]);
 
-  return { ...state, refresh };
+  const ensureFresh = useCallback(
+    async (maximumAgeMs = 10_000) => {
+      const snapshot = dataRef.current;
+      if (!snapshot || Date.now() - snapshot.fetchedAt > maximumAgeMs) {
+        await refresh(true);
+      }
+    },
+    [refresh],
+  );
+
+  const dismissSettingsChanges = useCallback(() => {
+    setState((current) => ({ ...current, settingsChanges: [] }));
+  }, []);
+
+  return {
+    ...state,
+    refresh,
+    ensureFresh,
+    dismissSettingsChanges,
+  };
 }
