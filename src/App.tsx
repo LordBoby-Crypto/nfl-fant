@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   CalendarClock,
@@ -326,6 +326,20 @@ function App() {
       view === "Trades" ||
       view === "Matchups",
   );
+  const focusedDraftActive = data?.draft.status === "drafting";
+  const visibleNavItems = useMemo(
+    () =>
+      focusedDraftActive
+        ? NAV_ITEMS.filter(
+            (item) => !["Waivers", "Trades", "Matchups"].includes(item.name),
+          )
+        : NAV_ITEMS,
+    [focusedDraftActive],
+  );
+
+  useEffect(() => {
+    if (focusedDraftActive) setView("Draft Room");
+  }, [focusedDraftActive]);
 
   const title = useMemo(() => {
     if (!data) return "THE League";
@@ -348,7 +362,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${focusedDraftActive ? "focused-draft-active" : ""}`}>
       <aside className={`sidebar ${menuOpen ? "is-open" : ""}`}>
         <button
           className="mobile-close"
@@ -359,7 +373,7 @@ function App() {
         </button>
         <div className="brand">WAR <span>ROOM</span></div>
         <nav aria-label="Main navigation">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             return (
               <button
@@ -515,7 +529,7 @@ function App() {
       </div>
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        {NAV_ITEMS.filter((item) =>
+        {visibleNavItems.filter((item) =>
           ["Overview", "Draft Room", "My Team", "Waivers", "Trades", "Matchups"].includes(
             item.name,
           ),

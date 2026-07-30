@@ -9,6 +9,8 @@ import {
 } from "react";
 import {
   Ban,
+  Bell,
+  BellRing,
   Bot,
   Check,
   ChevronDown,
@@ -20,15 +22,18 @@ import {
   LockKeyhole,
   MoonStar,
   Play,
+  Radio,
   RefreshCw,
   RotateCcw,
   Search,
   ShieldAlert,
   Star,
+  Sun,
   Target,
   TrendingDown,
   TrendingUp,
   UsersRound,
+  X,
 } from "lucide-react";
 import type { useDraftPicks } from "../../hooks/useDraftPicks";
 import { USER_ID, getDraftPosition, getUserRoster } from "../../services/sleeper";
@@ -68,6 +73,7 @@ import {
   type TierBreakWarning,
 } from "./liveIntelligence";
 import { useDraftControls } from "./useDraftControls";
+import { useDraftFocusTools } from "./useDraftFocusTools";
 import { useDraftStrategy } from "./useDraftStrategy";
 
 type WarRoomState = ReturnType<typeof useWarRoom>;
@@ -662,6 +668,301 @@ function QueuePanel({
   );
 }
 
+function FocusedRecommendation({
+  recommendation,
+  rank,
+  guidance,
+  tierBreak,
+  controls,
+  onToggle,
+}: {
+  recommendation: DraftRecommendation;
+  rank: number;
+  guidance: PlayerWaitGuidance | null;
+  tierBreak: TierBreakWarning | null;
+  controls: DraftControlState;
+  onToggle: (kind: DraftControlKind, playerId: string) => void;
+}) {
+  const queued = controls.queue.includes(recommendation.player.id);
+  return (
+    <article className={`focused-recommendation ${rank === 1 ? "is-first" : ""}`}>
+      <strong className="focused-rank">{rank}</strong>
+      <span className={`position-mark position-${recommendation.player.position.toLowerCase()}`}>
+        {recommendation.player.position}
+      </span>
+      <span className="focused-player">
+        <strong>{recommendation.player.name}</strong>
+        <small>
+          {recommendation.player.team} · ECR {formatNumber(recommendation.player.ecr)}
+        </small>
+      </span>
+      <span className="focused-guidance">
+        <strong className={guidance ? `is-${guidance.tone}` : ""}>
+          {guidance?.guidance ?? "Best available"}
+        </strong>
+        <small>
+          {guidance?.survivalProbability === null || guidance?.survivalProbability === undefined
+            ? `${recommendation.score} fit score`
+            : `${guidance.survivalProbability}% survives`}
+        </small>
+      </span>
+      {tierBreak?.urgent ? (
+        <em>{tierBreak.remainingInTier} left in tier</em>
+      ) : null}
+      <button
+        type="button"
+        className={queued ? "is-queued" : ""}
+        aria-pressed={queued}
+        onClick={() => onToggle("queue", recommendation.player.id)}
+      >
+        <ListPlus />
+        {queued ? "Queued" : "Queue"}
+      </button>
+    </article>
+  );
+}
+
+function FocusedDraftCommand({
+  currentTeamName,
+  currentPick,
+  currentRound,
+  currentSlot,
+  picksUntilUser,
+  isUserTurn,
+  recommendations,
+  waitGuidance,
+  tierBreaks,
+  available,
+  controls,
+  recentPicks,
+  teams,
+  positionRun,
+  tools,
+  onToggle,
+}: {
+  currentTeamName: string;
+  currentPick: number;
+  currentRound: number;
+  currentSlot: number;
+  picksUntilUser: number | null;
+  isUserTurn: boolean;
+  recommendations: DraftRecommendation[];
+  waitGuidance: Map<string, PlayerWaitGuidance>;
+  tierBreaks: Map<string, TierBreakWarning | null>;
+  available: PlayerIntelligence[];
+  controls: DraftControlState;
+  recentPicks: SleeperDraftPick[];
+  teams: TeamDraftState[];
+  positionRun: ReturnType<typeof detectPositionRun>;
+  tools: ReturnType<typeof useDraftFocusTools>;
+  onToggle: (kind: DraftControlKind, playerId: string) => void;
+}) {
+  const availableById = new Map(available.map((player) => [player.id, player]));
+  const queuedPlayers = controls.queue
+    .map((playerId) => availableById.get(playerId))
+    .filter((player): player is PlayerIntelligence => Boolean(player))
+    .slice(0, 6);
+  const notificationCopy =
+    tools.notificationState === "granted"
+      ? "Sound + notifications"
+      : tools.notificationState === "denied"
+        ? "Sound only · notifications blocked"
+        : tools.notificationState === "unsupported"
+          ? "Sound only"
+          : "Sound + permission prompt";
+  const wakeCopy =
+    tools.wakeLockState === "unsupported"
+      ? "Wake lock unavailable"
+      : tools.wakeLockState === "blocked"
+        ? "Wake lock blocked"
+        : tools.wakeLockEnabled
+          ? "Screen stays awake"
+          : "Keep screen awake";
+
+  return (
+    <section
+      className={`focused-draft-command ${isUserTurn ? "is-on-clock" : ""}`}
+      aria-label="Focused draft command screen"
+    >
+      {isUserTurn ? (
+        <div className="focused-on-clock-alert" role="alert" aria-live="assertive">
+          <BellRing />
+          <span>
+            <strong>You are on the clock</strong>
+            <small>Make the selection in Sleeper now.</small>
+          </span>
+        </div>
+      ) : null}
+
+      <header className="focused-command-header">
+        <span>
+          <Radio />
+          <strong>Focused draft mode</strong>
+          <small>Live while Sleeper reports the draft running</small>
+        </span>
+        <div className="focused-command-tools">
+          <button
+            type="button"
+            className={tools.alertsEnabled ? "is-active" : ""}
+            onClick={() => void tools.toggleAlerts()}
+          >
+            {tools.alertsEnabled ? <BellRing /> : <Bell />}
+            <span>{tools.alertsEnabled ? notificationCopy : "Enable alerts"}</span>
+          </button>
+          <button
+            type="button"
+            className={tools.positionRunAlerts ? "is-active" : ""}
+            aria-pressed={tools.positionRunAlerts}
+            onClick={tools.togglePositionRunAlerts}
+          >
+            <TrendingUp />
+            <span>{tools.positionRunAlerts ? "Run alerts on" : "Run alerts off"}</span>
+          </button>
+          <button
+            type="button"
+            className={tools.wakeLockEnabled ? "is-active" : ""}
+            disabled={tools.wakeLockState === "unsupported" || tools.wakeLockState === "requesting"}
+            onClick={() => void tools.toggleWakeLock()}
+          >
+            <Sun />
+            <span>{wakeCopy}</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="focused-clock-grid">
+        <article className="focused-current-picker">
+          <small>Current picker</small>
+          <strong>{isUserTurn ? "You — KingBoby" : currentTeamName}</strong>
+          <span>
+            Round {currentRound}.{String(currentSlot).padStart(2, "0")} · Pick {currentPick}
+          </span>
+        </article>
+        <article className={`focused-turn-distance ${isUserTurn ? "is-now" : ""}`}>
+          <small>Picks until your turn</small>
+          <strong>
+            {picksUntilUser === null
+              ? "—"
+              : picksUntilUser === 0
+                ? "NOW"
+                : picksUntilUser}
+          </strong>
+          <span>
+            {isUserTurn
+              ? "Submit your pick in Sleeper"
+              : picksUntilUser === null
+                ? "Waiting for draft order"
+                : picksUntilUser <= 3
+                  ? "Get your choice ready"
+                  : "Watch the board"}
+          </span>
+        </article>
+        <article className={`focused-run-status ${positionRun ? "is-running" : ""}`}>
+          <small>Position pressure</small>
+          <strong>
+            {positionRun
+              ? `${positionRun.count} ${positionRun.position}s in ${positionRun.window}`
+              : "No active run"}
+          </strong>
+          <span>
+            {positionRun
+              ? `Picks ${positionRun.pickNumbers.join(", ")}`
+              : "Four-of-six threshold is clear"}
+          </span>
+        </article>
+      </div>
+
+      <div className="focused-command-body">
+        <section className="focused-top-three">
+          <header>
+            <Target />
+            <span>
+              <h2>Top three right now</h2>
+              <p>Always visible and recalculated after every pick.</p>
+            </span>
+          </header>
+          <div>
+            {recommendations.slice(0, 3).map((recommendation, index) => (
+              <FocusedRecommendation
+                key={recommendation.player.id}
+                recommendation={recommendation}
+                rank={index + 1}
+                guidance={waitGuidance.get(recommendation.player.id) ?? null}
+                tierBreak={tierBreaks.get(recommendation.player.id) ?? null}
+                controls={controls}
+                onToggle={onToggle}
+              />
+            ))}
+            {!recommendations.length ? (
+              <p className="focused-empty">Unlock the War Room to load recommendations.</p>
+            ) : null}
+          </div>
+        </section>
+
+        <div className="focused-side-stack">
+          <section className="focused-queue">
+            <header>
+              <ListPlus />
+              <span>
+                <h2>Queue</h2>
+                <p>{queuedPlayers.length} ready</p>
+              </span>
+            </header>
+            <div>
+              {queuedPlayers.length ? (
+                queuedPlayers.map((player, index) => (
+                  <article key={player.id}>
+                    <strong>{index + 1}</strong>
+                    <span>
+                      <b>{player.name}</b>
+                      <small>{player.position} · {player.team}</small>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${player.name} from queue`}
+                      onClick={() => onToggle("queue", player.id)}
+                    >
+                      <X />
+                    </button>
+                  </article>
+                ))
+              ) : (
+                <p className="focused-empty">Queue three fallback players.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="focused-recent">
+            <header>
+              <Check />
+              <span>
+                <h2>Recent picks</h2>
+                <p>Newest first</p>
+              </span>
+            </header>
+            <div>
+              {recentPicks.length ? (
+                [...recentPicks]
+                  .reverse()
+                  .slice(0, 6)
+                  .map((pick) => (
+                    <RecentPick
+                      key={`${pick.pick_no}-${pick.player_id}`}
+                      pick={pick}
+                      teams={teams}
+                    />
+                  ))
+              ) : (
+                <p className="focused-empty">Waiting for the first pick.</p>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function LiveDraftRoom({
   snapshot,
   draftPicks,
@@ -742,6 +1043,14 @@ export function LiveDraftRoom({
     [available, board, controls, cursor, teams, userRoster],
   );
   const positionRun = useMemo(() => detectPositionRun(picks), [picks]);
+  const focusedModeActive = draft.status === "drafting" && !simulationActive;
+  const focusTools = useDraftFocusTools({
+    active: focusedModeActive,
+    currentPick: cursor.currentPick,
+    picksUntilUser: cursor.picksUntilUser,
+    isUserTurn: cursor.isUserTurn,
+    positionRun,
+  });
   const nextDecisionPick = useMemo(
     () =>
       userRoster
@@ -974,7 +1283,27 @@ export function LiveDraftRoom({
         </section>
       ) : null}
 
-      <section className="on-clock-rail" aria-label="Draft clock">
+      {focusedModeActive ? (
+        <FocusedDraftCommand
+          currentTeamName={currentTeam?.name ?? "Waiting for draft order"}
+          currentPick={cursor.currentPick}
+          currentRound={cursor.currentRound}
+          currentSlot={cursor.currentSlot}
+          picksUntilUser={cursor.picksUntilUser}
+          isUserTurn={cursor.isUserTurn}
+          recommendations={recommendations}
+          waitGuidance={waitGuidance}
+          tierBreaks={tierBreaks}
+          available={available}
+          controls={controls}
+          recentPicks={completedPicks}
+          teams={teams}
+          positionRun={positionRun}
+          tools={focusTools}
+          onToggle={toggle}
+        />
+      ) : (
+        <section className="on-clock-rail" aria-label="Draft clock">
         <span className={cursor.isUserTurn ? "your-turn" : ""}>
           <small>On the clock</small>
           <strong>
@@ -1025,7 +1354,8 @@ export function LiveDraftRoom({
                   : "Sleeper ready"}
           </strong>
         </span>
-      </section>
+        </section>
+      )}
 
       {!warRoom.isUnlocked ? <DraftUnlock warRoom={warRoom} /> : null}
       {warRoom.dataError ? (

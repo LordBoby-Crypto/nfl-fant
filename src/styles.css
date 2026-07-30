@@ -2167,6 +2167,432 @@ button:focus-visible {
   color: #ffd08b;
 }
 
+.focused-draft-command {
+  margin-bottom: 16px;
+  overflow: hidden;
+  background: #071421;
+  border: 1px solid rgba(186, 255, 16, 0.48);
+  border-radius: 7px;
+  box-shadow: 0 18px 50px rgba(0, 5, 12, 0.34);
+}
+
+.focused-draft-command.is-on-clock {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 2px rgba(186, 255, 16, 0.12),
+    0 18px 55px rgba(0, 5, 12, 0.4);
+}
+
+.focused-on-clock-alert {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 20px;
+  color: #07111e;
+  background: var(--accent);
+  text-align: left;
+  animation: focused-clock-pulse 1.4s ease-in-out infinite;
+}
+
+.focused-on-clock-alert > svg {
+  width: 32px;
+  height: 32px;
+}
+
+.focused-on-clock-alert > span {
+  display: grid;
+  gap: 2px;
+}
+
+.focused-on-clock-alert strong {
+  font-size: 24px;
+  font-weight: 950;
+  letter-spacing: -0.025em;
+  text-transform: uppercase;
+}
+
+.focused-on-clock-alert small {
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.focused-command-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 62px;
+  padding: 10px 14px;
+  background: #06111e;
+  border-bottom: 1px solid var(--line);
+}
+
+.focused-command-header > span {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 9px;
+  margin-right: auto;
+}
+
+.focused-command-header > span > svg {
+  grid-row: 1 / 3;
+  width: 22px;
+  color: var(--accent);
+}
+
+.focused-command-header > span strong {
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.focused-command-header > span small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.focused-command-tools {
+  display: flex;
+  gap: 7px;
+}
+
+.focused-command-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  color: #9eb0c4;
+  background: #081625;
+  border: 1px solid #344a61;
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.focused-command-tools button.is-active {
+  color: var(--accent);
+  border-color: rgba(186, 255, 16, 0.62);
+}
+
+.focused-command-tools button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.focused-command-tools svg {
+  width: 14px;
+  height: 14px;
+}
+
+.focused-clock-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(180px, 0.65fr) minmax(200px, 0.75fr);
+  gap: 1px;
+  background: var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.focused-clock-grid article {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-height: 108px;
+  padding: 15px 18px;
+  background: #081625;
+}
+
+.focused-clock-grid small {
+  color: #8293a7;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.focused-clock-grid strong {
+  overflow: hidden;
+  font-size: clamp(20px, 2.1vw, 34px);
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focused-clock-grid span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.focused-current-picker {
+  box-shadow: inset 4px 0 var(--accent);
+}
+
+.focused-turn-distance {
+  text-align: center;
+}
+
+.focused-turn-distance strong {
+  color: var(--accent);
+  font-size: clamp(42px, 4vw, 62px);
+}
+
+.focused-turn-distance.is-now {
+  background:
+    linear-gradient(135deg, rgba(186, 255, 16, 0.13), transparent),
+    #081625;
+}
+
+.focused-run-status.is-running {
+  box-shadow: inset 4px 0 #f4c66b;
+}
+
+.focused-run-status.is-running strong {
+  color: #ffd38a;
+}
+
+.focused-command-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.75fr);
+  gap: 1px;
+  min-height: 312px;
+  background: var(--line);
+}
+
+.focused-top-three,
+.focused-queue,
+.focused-recent {
+  min-width: 0;
+  background: #081625;
+}
+
+.focused-top-three > header,
+.focused-queue > header,
+.focused-recent > header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 8px 12px;
+  background: #071421;
+  border-bottom: 1px solid var(--line);
+}
+
+.focused-top-three > header svg,
+.focused-queue > header svg,
+.focused-recent > header svg {
+  width: 17px;
+  color: var(--accent);
+}
+
+.focused-top-three h2,
+.focused-queue h2,
+.focused-recent h2 {
+  margin: 0;
+  font-size: 11px;
+}
+
+.focused-top-three p,
+.focused-queue p,
+.focused-recent p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.focused-recommendation {
+  display: grid;
+  grid-template-columns: 26px auto minmax(0, 1fr) minmax(110px, auto) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 84px;
+  padding: 9px 11px;
+  border-bottom: 1px solid rgba(65, 82, 101, 0.52);
+}
+
+.focused-recommendation.is-first {
+  background:
+    linear-gradient(90deg, rgba(186, 255, 16, 0.06), transparent 60%),
+    #081625;
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+.focused-rank {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  color: #07111e;
+  background: var(--accent);
+  border-radius: 50%;
+  font-size: 9px;
+  place-items: center;
+}
+
+.focused-player,
+.focused-guidance {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.focused-player > strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focused-player small,
+.focused-guidance small {
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.focused-guidance {
+  text-align: right;
+}
+
+.focused-guidance > strong {
+  font-size: 9px;
+}
+
+.focused-guidance > strong.is-danger {
+  color: #ff9d9d;
+}
+
+.focused-guidance > strong.is-warning {
+  color: #ffd08b;
+}
+
+.focused-guidance > strong.is-safe {
+  color: #9ceeb3;
+}
+
+.focused-recommendation > em {
+  grid-column: 3 / 5;
+  color: #ffd08b;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.focused-recommendation > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 8px;
+  color: #9aaabd;
+  background: #071421;
+  border: 1px solid #344a61;
+  border-radius: 4px;
+  font-size: 7px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.focused-recommendation > button.is-queued {
+  color: var(--accent);
+  border-color: rgba(186, 255, 16, 0.55);
+}
+
+.focused-recommendation > button svg {
+  width: 12px;
+}
+
+.focused-side-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  min-width: 0;
+  background: var(--line);
+}
+
+.focused-queue > div,
+.focused-recent > div {
+  max-height: 264px;
+  overflow-y: auto;
+}
+
+.focused-queue article {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(65, 82, 101, 0.44);
+}
+
+.focused-queue article > strong {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  color: #07111e;
+  background: var(--accent);
+  border-radius: 50%;
+  font-size: 7px;
+  place-items: center;
+}
+
+.focused-queue article > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.focused-queue b {
+  overflow: hidden;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focused-queue small {
+  color: var(--muted);
+  font-size: 6px;
+}
+
+.focused-queue article button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: #8192a6;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  place-items: center;
+}
+
+.focused-queue article button svg {
+  width: 12px;
+}
+
+.focused-recent .recent-pick-row {
+  min-height: 44px;
+  padding: 5px 7px;
+}
+
+.focused-empty {
+  display: grid;
+  min-height: 80px;
+  margin: 0;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 8px;
+  place-content: center;
+  text-align: center;
+}
+
+@keyframes focused-clock-pulse {
+  50% {
+    filter: brightness(1.14);
+  }
+}
+
 .full-draft-board,
 .live-intelligence-panel {
   margin-bottom: 16px;
@@ -5492,6 +5918,14 @@ button:focus-visible {
 }
 
 @media (max-width: 1120px) {
+  .focused-command-body {
+    grid-template-columns: 1fr;
+  }
+
+  .focused-side-stack {
+    min-height: 230px;
+  }
+
   .live-alert-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5521,6 +5955,249 @@ button:focus-visible {
   .live-draft-page {
     width: 100%;
     padding: 15px 10px calc(92px + env(safe-area-inset-bottom));
+  }
+
+  .focused-draft-active .draft-room-heading {
+    display: none;
+  }
+
+  .focused-draft-active .mobile-bottom-nav {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .focused-draft-command {
+    margin: 0 -10px 10px;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .focused-on-clock-alert {
+    min-height: 58px;
+    gap: 9px;
+    padding: 8px 12px;
+  }
+
+  .focused-on-clock-alert > svg {
+    width: 25px;
+  }
+
+  .focused-on-clock-alert strong {
+    font-size: 18px;
+  }
+
+  .focused-on-clock-alert small {
+    font-size: 8px;
+  }
+
+  .focused-command-header {
+    display: grid;
+    gap: 8px;
+    min-height: 96px;
+    padding: 8px 10px;
+  }
+
+  .focused-command-header > span {
+    width: 100%;
+  }
+
+  .focused-command-header > span strong {
+    font-size: 10px;
+  }
+
+  .focused-command-header > span small {
+    font-size: 7px;
+  }
+
+  .focused-command-header > span > svg {
+    width: 18px;
+  }
+
+  .focused-command-tools {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .focused-command-tools button {
+    justify-content: center;
+    min-width: 0;
+    min-height: 36px;
+    padding: 0 5px;
+    font-size: 6px;
+  }
+
+  .focused-command-tools button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .focused-command-tools svg {
+    flex: 0 0 auto;
+    width: 12px;
+  }
+
+  .focused-clock-grid {
+    grid-template-columns: minmax(0, 1fr) 112px;
+  }
+
+  .focused-clock-grid article {
+    min-height: 64px;
+    padding: 9px 10px;
+  }
+
+  .focused-clock-grid small {
+    font-size: 6px;
+  }
+
+  .focused-clock-grid strong {
+    font-size: 16px;
+  }
+
+  .focused-clock-grid span {
+    font-size: 7px;
+  }
+
+  .focused-current-picker {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .focused-turn-distance {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+
+  .focused-turn-distance strong {
+    font-size: 42px;
+  }
+
+  .focused-run-status {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .focused-command-body {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .focused-top-three > header,
+  .focused-queue > header,
+  .focused-recent > header {
+    min-height: 39px;
+    padding: 6px 8px;
+  }
+
+  .focused-top-three > header svg,
+  .focused-queue > header svg,
+  .focused-recent > header svg {
+    width: 14px;
+  }
+
+  .focused-top-three h2,
+  .focused-queue h2,
+  .focused-recent h2 {
+    font-size: 9px;
+  }
+
+  .focused-top-three p,
+  .focused-queue p,
+  .focused-recent p {
+    font-size: 6px;
+  }
+
+  .focused-recommendation {
+    grid-template-columns: 20px auto minmax(0, 1fr) auto;
+    gap: 5px;
+    min-height: 61px;
+    padding: 6px 7px;
+  }
+
+  .focused-rank {
+    width: 19px;
+    height: 19px;
+    font-size: 7px;
+  }
+
+  .focused-recommendation .position-mark {
+    width: 24px;
+    height: 24px;
+    font-size: 7px;
+  }
+
+  .focused-player > strong {
+    font-size: 9px;
+  }
+
+  .focused-player small,
+  .focused-guidance small {
+    font-size: 6px;
+  }
+
+  .focused-guidance {
+    grid-column: 3;
+    text-align: left;
+  }
+
+  .focused-guidance > strong {
+    font-size: 7px;
+  }
+
+  .focused-recommendation > em {
+    display: none;
+  }
+
+  .focused-recommendation > button {
+    grid-column: 4;
+    grid-row: 1 / 3;
+    width: 30px;
+    min-height: 30px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .focused-recommendation > button svg {
+    width: 13px;
+  }
+
+  .focused-side-stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-height: 174px;
+  }
+
+  .focused-queue > div,
+  .focused-recent > div {
+    max-height: 135px;
+  }
+
+  .focused-queue article {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    min-height: 40px;
+    padding: 4px 5px;
+  }
+
+  .focused-queue article > strong {
+    width: 17px;
+    height: 17px;
+    font-size: 6px;
+  }
+
+  .focused-queue b {
+    font-size: 7px;
+  }
+
+  .focused-queue small {
+    font-size: 5px;
+  }
+
+  .focused-recent .recent-pick-row {
+    grid-template-columns: 16px 22px minmax(0, 1fr);
+    min-height: 40px;
+    gap: 4px;
+    padding: 4px;
   }
 
   .draft-room-heading {

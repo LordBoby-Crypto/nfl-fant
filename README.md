@@ -133,6 +133,20 @@ Milestone 11 adds:
   position, player, and confidence
 - Recommendation rank and score changes highlighted after every pick
 
+Milestone 12 adds:
+
+- Automatic focused Draft Room activation while Sleeper reports `drafting`
+- Oversized current-picker, picks-until-turn, current-pick and position-run
+  status in one emergency command surface
+- Three always-visible recommendations with wait/draft and tier guidance
+- Queue and six most recent picks alongside those recommendations
+- Deduplicated sound and browser notifications at five, three and one pick
+  away, plus a strong on-clock alert
+- Optional position-run notifications
+- Screen Wake Lock controls with clear unsupported or blocked states
+- Draft-time navigation that temporarily removes Waivers, Trades and Matchups
+- A compact phone layout that preserves the full command screen above the fold
+
 ## Local development
 
 ```bash
@@ -169,6 +183,9 @@ pick removal, and last-complete-board retention.
 Live-intelligence tests cover the complete 238-cell board, position runs, tier
 cliffs, snake-turn survival targets, wait/draft guidance, controlled-player
 losses, queue depletion, and recommendation movement.
+Focused-mode tests cover five/three/one-pick thresholds, repeated-poll
+deduplication, urgent on-clock priority, optional position-run alerts, and
+fast-pick threshold recovery.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 
