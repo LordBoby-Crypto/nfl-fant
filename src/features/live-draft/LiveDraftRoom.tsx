@@ -968,18 +968,22 @@ export function LiveDraftRoom({
   draftPicks,
   refreshing,
   onRefresh,
+  onEnsureSettingsFresh,
   warRoom,
 }: {
   snapshot: LeagueSnapshot;
   draftPicks: DraftPickState;
   refreshing: boolean;
   onRefresh: () => void;
+  onEnsureSettingsFresh: (maximumAgeMs?: number) => Promise<void>;
   warRoom: WarRoomState;
 }) {
   const draft = snapshot.draft;
   const userRoster = getUserRoster(snapshot);
   const actualPosition = getDraftPosition(snapshot);
-  const [simSlot, setSimSlot] = useState(7);
+  const [simSlot, setSimSlot] = useState(() =>
+    Math.max(1, Math.ceil(draft.settings.teams / 2))
+  );
   const [simulationActive, setSimulationActive] = useState(false);
   const [simulatedPicks, setSimulatedPicks] = useState<SleeperDraftPick[]>([]);
   const [query, setQuery] = useState("");
@@ -998,10 +1002,7 @@ export function LiveDraftRoom({
           : {},
     [actualPosition, draft, simSlot, simulationActive, userRoster],
   );
-  const livePicks = useMemo(
-    () => draftPicks.picks.filter((pick) => pick.is_keeper !== true),
-    [draftPicks.picks],
-  );
+  const livePicks = draftPicks.picks;
   const picks = simulationActive ? simulatedPicks : livePicks;
   const teams = useMemo(
     () =>
@@ -1126,7 +1127,10 @@ export function LiveDraftRoom({
       assumedUserPick: cursor.isUserTurn
         ? recommendations[0]?.player
         : undefined,
-      limit: Math.min(14, Math.max(0, nextDecisionPick - cursor.currentPick)),
+      limit: Math.min(
+        draft.settings.teams,
+        Math.max(0, nextDecisionPick - cursor.currentPick),
+      ),
     });
   }, [
     board,
@@ -1150,6 +1154,15 @@ export function LiveDraftRoom({
     () => picks.map((pick) => `${pick.pick_no}:${pick.player_id}`).join("|"),
     [picks],
   );
+  useEffect(() => {
+    if (simulationActive) return;
+    void onEnsureSettingsFresh(draft.status === "drafting" ? 8_000 : 30_000);
+  }, [
+    draft.status,
+    onEnsureSettingsFresh,
+    pickSignature,
+    simulationActive,
+  ]);
   useEffect(() => {
     if (!recommendations.length) return;
     if (!previousRecommendations.current.length) {
@@ -1226,7 +1239,7 @@ export function LiveDraftRoom({
           <p>
             {simulationActive
               ? `Pre-draft simulation from slot ${simSlot}`
-              : "Live Sleeper picks with personalized 14-team PPR strategy."}
+              : `Live Sleeper picks with personalized ${draft.settings.teams}-team strategy.`}
           </p>
         </div>
         <div className="draft-heading-actions">
@@ -1527,7 +1540,7 @@ export function LiveDraftRoom({
         <header>
           <UsersRound />
           <div>
-            <h2>All 14 teams</h2>
+            <h2>All {draft.settings.teams} teams</h2>
             <p>Drafted rosters and unfilled starting needs.</p>
           </div>
         </header>

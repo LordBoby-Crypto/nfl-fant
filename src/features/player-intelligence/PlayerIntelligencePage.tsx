@@ -350,13 +350,17 @@ function LoadingBoard() {
 export function PlayerIntelligencePage({
   leagueName,
   mode,
+  scoringLabel,
   season,
+  draftFormat,
   status,
   warRoom,
 }: {
   leagueName: string;
   mode: IntelligenceMode;
+  scoringLabel: string;
   season: string;
+  draftFormat: string;
   status: IntelligenceStatus | null;
   warRoom: WarRoomState;
 }) {
@@ -403,7 +407,7 @@ export function PlayerIntelligencePage({
         <header className="page-heading">
           <div>
             <h1>{mode}</h1>
-            <p>{leagueName} · {season} · Full PPR</p>
+            <p>{leagueName} · {season} · {scoringLabel}</p>
           </div>
         </header>
         <WarRoomGate status={status} state={warRoom} />
@@ -418,7 +422,7 @@ export function PlayerIntelligencePage({
           <h1>{mode}</h1>
           <p>
             {mode === "Rankings"
-              ? "Live 2026 PPR consensus board with projections and risk context."
+              ? `Live ${season} consensus board with ${scoringLabel} league context.`
               : "Search every ranked player and open a complete research view."}
           </p>
         </div>
@@ -463,8 +467,8 @@ export function PlayerIntelligencePage({
           <section className="board-summary" aria-label="Ranking summary">
             <span><strong>{warRoom.board.players.length}</strong><small>ranked players</small></span>
             <span><strong>{warRoom.board.totalExperts ?? "—"}</strong><small>consensus experts</small></span>
-            <span><strong>PPR</strong><small>league scoring</small></span>
-            <span><strong>{season}</strong><small>redraft season</small></span>
+            <span><strong>{scoringLabel}</strong><small>league scoring</small></span>
+            <span><strong>{season}</strong><small>{draftFormat} draft</small></span>
           </section>
 
           {Object.keys(warRoom.board.datasetErrors).length ? (

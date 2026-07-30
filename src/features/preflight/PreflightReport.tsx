@@ -214,7 +214,8 @@ export function PreflightReport({
           <h2 id="preflight-title">{report.headline}</h2>
           <p>
             Live evidence from Sleeper, FantasyPros, your private session and
-            this browser. Run it again after changing any Sleeper setting.
+            this browser. Sleeper settings are rechecked automatically when the
+            app opens, refreshes, reconnects and throughout a live draft.
           </p>
         </span>
         <div className="preflight-counts" aria-label="Readiness totals">

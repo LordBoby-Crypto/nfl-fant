@@ -338,7 +338,7 @@ export function buildWaiverAssistant({
   );
   const analyses = analyzeLeagueTeams({
     snapshot,
-    picks: picks.filter((pick) => pick.is_keeper !== true),
+    picks,
     board,
     sleeperPlayers,
   });

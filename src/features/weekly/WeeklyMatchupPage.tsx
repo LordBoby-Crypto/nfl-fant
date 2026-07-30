@@ -475,7 +475,7 @@ export function WeeklyMatchupPage({
       warRoom.board
         ? analyzeLeagueTeams({
             snapshot,
-            picks: draftPicks.picks.filter((pick) => pick.is_keeper !== true),
+            picks: draftPicks.picks,
             board: warRoom.board.players,
             sleeperPlayers: sleeperPlayers.players,
           })
@@ -487,7 +487,7 @@ export function WeeklyMatchupPage({
       warRoom.weeklyBoard
         ? analyzeLeagueTeams({
             snapshot,
-            picks: draftPicks.picks.filter((pick) => pick.is_keeper !== true),
+            picks: draftPicks.picks,
             board: warRoom.weeklyBoard.players,
             sleeperPlayers: sleeperPlayers.players,
           })
@@ -543,8 +543,8 @@ export function WeeklyMatchupPage({
           <Swords />
           <h2>Weekly decisions begin after your draft</h2>
           <p>
-            This new redraft league has no roster or matchup schedule yet. Once
-            Sleeper records the draft, this page will build weekly start/sit
+            Sleeper has no roster or matchup schedule yet. Once keepers or
+            draft picks are recorded, this page will build weekly start/sit
             calls, injury alerts, playoff odds and schedule difficulty.
           </p>
           <span>
