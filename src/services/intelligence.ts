@@ -11,6 +11,9 @@ export interface IntelligenceStatus {
     apiKeyExposed: boolean;
     authentication: string;
   };
+  features?: {
+    secureSync: boolean;
+  };
 }
 
 export type IntelligenceDataset =

@@ -27,5 +27,8 @@ export default function handler(
       apiKeyExposed: false,
       authentication: "password-session",
     },
+    features: {
+      secureSync: true,
+    },
   });
 }

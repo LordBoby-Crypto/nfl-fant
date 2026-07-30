@@ -147,6 +147,21 @@ Milestone 12 adds:
 - Draft-time navigation that temporarily removes Waivers, Trades and Matchups
 - A compact phone layout that preserves the full command screen above the fold
 
+Milestone 13 adds:
+
+- Versioned JSON export and validated import for queue, watchlist, targets,
+  sleepers, and avoids
+- A standalone emergency HTML cheat sheet with saved lists and the top 200
+  last-known rankings
+- Printable FantasyPros rankings grouped by position and tier
+- Persistent last-known FantasyPros rankings that survive provider failures
+- Persistent last-complete Sleeper league and draft state for outage recovery
+- Optional AES-256-GCM cross-device sync backed by a dedicated Supabase vault
+- Recovery-code authorization with RLS isolation; Supabase stores ciphertext,
+  never the encryption key or plaintext draft preferences
+- A 30-minute session-expiration countdown and in-place renewal warning
+- A responsive Backup & device safety workspace on desktop and phone
+
 ## Local development
 
 ```bash
@@ -186,6 +201,10 @@ losses, queue depletion, and recommendation movement.
 Focused-mode tests cover five/three/one-pick thresholds, repeated-poll
 deduplication, urgent on-clock priority, optional position-run alerts, and
 fast-pick threshold recovery.
+Backup and sync tests cover full preference round-tripping, invalid-import
+rejection, emergency output, tier grouping, session warnings, recovery-code
+validation, AES-GCM encryption, wrong-key rejection, and the protected
+server-to-Supabase storage contract.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 
@@ -207,6 +226,16 @@ The backend requires:
 FANTASYPROS_API_KEY=
 WAR_ROOM_PASSWORD=
 WAR_ROOM_SESSION_SECRET=
+```
+
+Secure sync uses the dedicated `nfl-fant-sync` Supabase project. Its checked-in
+fallback is a Supabase publishable key, not a secret key. RLS policies and the
+recovery-derived vault secret enforce access to each encrypted row. Optional
+server-side overrides are:
+
+```bash
+SYNC_SUPABASE_URL=
+SYNC_SUPABASE_PUBLISHABLE_KEY=
 ```
 
 See `docs/DATA_SOURCES.md` for the provider comparison and license constraints.

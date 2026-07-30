@@ -445,6 +445,19 @@ export function PlayerIntelligencePage({
         </div>
       ) : null}
 
+      {warRoom.usingCachedBoard && warRoom.board?.players.length ? (
+        <div className="cached-data-note" role="status">
+          <ShieldCheck />
+          <span>
+            <strong>Showing last-known rankings</strong>
+            <small>
+              FantasyPros is temporarily unavailable. This saved board remains
+              usable while the War Room retries.
+            </small>
+          </span>
+        </div>
+      ) : null}
+
       {warRoom.board?.players.length ? (
         <>
           <section className="board-summary" aria-label="Ranking summary">
