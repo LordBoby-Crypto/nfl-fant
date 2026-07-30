@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   CalendarClock,
@@ -39,6 +39,8 @@ import {
   SafetyCenterPage,
   SessionExpiryBanner,
 } from "./features/safety/SafetyCenterPage";
+import { PostDraftReport } from "./features/post-draft/PostDraftReport";
+import { shouldAutoOpenPostDraft } from "./features/post-draft/engine";
 import {
   getDraftPosition,
   USERNAME,
@@ -118,6 +120,17 @@ function Overview({
 }) {
   const snapshot = leagueState.data;
   if (!snapshot) return null;
+  if (snapshot.draft.status === "complete") {
+    return (
+      <PostDraftReport
+        snapshot={snapshot}
+        draftPicks={draftPicks}
+        warRoom={warRoom}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      />
+    );
+  }
   const position = getDraftPosition(snapshot);
   const { draft, league } = snapshot;
   const isOrderPending = !position;
@@ -319,7 +332,11 @@ function App() {
       view === "Trades" ||
       view === "Matchups" ||
       view === "Safety",
-    view === "Matchups" ? weeklyOutlook.data?.currentWeek ?? 1 : null,
+    view === "Matchups"
+      ? weeklyOutlook.data?.currentWeek ?? 1
+      : view === "Overview" && data?.draft.status === "complete"
+        ? 1
+        : null,
   );
   const waiverActivity = useWaiverActivity(
     data?.league.league_id ?? "",
@@ -336,6 +353,7 @@ function App() {
       view === "Matchups",
   );
   const focusedDraftActive = data?.draft.status === "drafting";
+  const previousDraftStatus = useRef(data?.draft.status ?? null);
   const visibleNavItems = useMemo(
     () =>
       focusedDraftActive
@@ -347,8 +365,15 @@ function App() {
   );
 
   useEffect(() => {
-    if (focusedDraftActive) setView("Draft Room");
-  }, [focusedDraftActive]);
+    const current = data?.draft.status ?? null;
+    const previous = previousDraftStatus.current;
+    if (current === "drafting") {
+      setView("Draft Room");
+    } else if (shouldAutoOpenPostDraft(previous, current)) {
+      setView("Overview");
+    }
+    previousDraftStatus.current = current;
+  }, [data?.draft.status]);
 
   const title = useMemo(() => {
     if (!data) return "THE League";
@@ -432,7 +457,13 @@ function App() {
         </div>
       </header>
 
-      <div className={`content ${view === "Overview" ? "" : "single-page"}`}>
+      <div
+        className={`content ${
+          view === "Overview" && data.draft.status !== "complete"
+            ? ""
+            : "single-page"
+        }`}
+      >
         <SessionExpiryBanner warRoom={warRoom} />
         {error ? (
           <div className="inline-error">

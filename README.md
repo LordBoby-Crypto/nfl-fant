@@ -162,6 +162,21 @@ Milestone 13 adds:
 - A 30-minute session-expiration countdown and in-place renewal warning
 - A responsive Backup & device safety workspace on desktop and phone
 
+Milestone 14 adds:
+
+- Automatic post-draft report activation when Sleeper reports `complete`
+- Honest overall, starting-lineup, bench, depth, and risk-safety grades
+- Best and worst selection review against FantasyPros ADP and ECR
+- Separate justified and unnecessary reach analysis with explicit evidence
+- Players successfully drafted at least half a league round after market
+- Starter-aware bye-week and injury-risk concentration warnings
+- The best available undrafted players and a first waiver watchlist shaped by
+  roster needs plus saved queue, target, sleeper, and watchlist intent
+- A Week 1 optimized lineup that uses weekly projections when published and
+  falls back honestly to rankings when they are not
+- Position weaknesses ordered into an immediate action plan
+- Provisional-grade disclosure when a roster player cannot be matched
+
 ## Local development
 
 ```bash
@@ -205,6 +220,10 @@ Backup and sync tests cover full preference round-tripping, invalid-import
 rejection, emergency output, tier grouping, session warnings, recovery-code
 validation, AES-GCM encryption, wrong-key rejection, and the protected
 server-to-Supabase storage contract.
+Post-draft tests cover Sleeper completion activation, stable grade boundaries,
+selection value, justified and unnecessary reaches, successful waits,
+bye/injury concentrations, undrafted-player ordering, saved-intent waiver
+priorities, Week 1 optimization, and unmatched-player disclosure.
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
 
