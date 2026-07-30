@@ -12,6 +12,7 @@ import {
   buildPlayerBoard,
   type PlayerBoardData,
 } from "./model";
+import type { LeagueScoringContext } from "./scoring.ts";
 import {
   cachePlayerBoard,
   readCachedPlayerBoard,
@@ -29,6 +30,9 @@ const DATASETS: IntelligenceDataset[] = [
 export function useWarRoom(
   active: boolean,
   weeklyProjectionWeek: number | null = null,
+  scoringContext:
+    | (LeagueScoringContext & { fingerprint?: string })
+    | null = null,
 ) {
   const [session, setSession] = useState<WarRoomSession | null>(() =>
     readWarRoomSession(),
@@ -134,7 +138,11 @@ export function useWarRoom(
           return;
         }
 
-        const nextBoard = buildPlayerBoard(responses, failures);
+        const nextBoard = buildPlayerBoard(
+          responses,
+          failures,
+          scoringContext,
+        );
         const hasFreshRankings = responses.some(
           (response) => response.dataset === "rankings",
         );
@@ -170,7 +178,13 @@ export function useWarRoom(
           if (failures["weekly-projections"]) {
             weeklyFailures.projections = failures["weekly-projections"];
           }
-          setWeeklyBoard(buildPlayerBoard(weeklyResponses, weeklyFailures));
+          setWeeklyBoard(
+            buildPlayerBoard(
+              weeklyResponses,
+              weeklyFailures,
+              scoringContext,
+            ),
+          );
         } else if (weeklyProjectionWeek) {
           const weeklyFailures = {
             ...failures,
@@ -184,6 +198,7 @@ export function useWarRoom(
                 (response) => response.dataset !== "projections",
               ),
               weeklyFailures,
+              scoringContext,
             ),
           );
         } else {
@@ -211,7 +226,15 @@ export function useWarRoom(
       });
 
     return () => controller.abort();
-  }, [active, lock, refreshKey, session, weeklyProjectionWeek]);
+  }, [
+    active,
+    lock,
+    refreshKey,
+    scoringContext,
+    scoringContext?.fingerprint,
+    session,
+    weeklyProjectionWeek,
+  ]);
 
   return {
     board,

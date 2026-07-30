@@ -341,6 +341,10 @@ function App() {
     data?.league.settings.playoff_week_start ?? 15,
     view === "Matchups" && Boolean(data),
   );
+  const settingsModel = useMemo(
+    () => (data ? buildLeagueSettingsModel(data, USER_ID) : null),
+    [data],
+  );
   const warRoom = useWarRoom(
     view === "Overview" ||
       view === "Draft Room" ||
@@ -356,6 +360,7 @@ function App() {
       : view === "Overview" && data?.draft.status === "complete"
         ? 1
         : null,
+    settingsModel,
   );
   const waiverActivity = useWaiverActivity(
     data?.league.league_id ?? "",
@@ -372,10 +377,6 @@ function App() {
       view === "Matchups",
   );
   const focusedDraftActive = data?.draft.status === "drafting";
-  const settingsModel = useMemo(
-    () => (data ? buildLeagueSettingsModel(data, USER_ID) : null),
-    [data],
-  );
   const previousDraftStatus = useRef(data?.draft.status ?? null);
   const visibleNavItems = useMemo(
     () =>

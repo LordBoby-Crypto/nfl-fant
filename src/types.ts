@@ -50,6 +50,9 @@ export interface Draft {
     slots_bn: number;
     slots_super_flex?: number;
     slots_idp_flex?: number;
+    slots_dl?: number;
+    slots_lb?: number;
+    slots_db?: number;
     [key: string]: number | undefined;
   };
   metadata?: Record<string, string | null>;

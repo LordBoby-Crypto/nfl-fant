@@ -20,7 +20,7 @@ export default function handler(
     provider: {
       name: "FantasyPros",
       season: 2026,
-      scoring: "PPR",
+      scoring: "Statistical components; Sleeper league rules applied in the War Room",
       datasets: ["rankings", "adp", "projections", "injuries", "news"],
     },
     security: {

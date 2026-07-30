@@ -23,7 +23,7 @@ export interface DraftControlState {
 }
 
 export interface PositionNeed {
-  position: DraftPosition | "FLEX" | "SUPER_FLEX";
+  position: DraftPosition | "FLEX" | "SUPER_FLEX" | "IDP_FLEX";
   missing: number;
   urgency: "urgent" | "need" | "depth" | "filled";
 }
@@ -72,9 +72,24 @@ const EMPTY_COUNTS: Record<DraftPosition, number> = {
   TE: 0,
   K: 0,
   DST: 0,
+  DL: 0,
+  LB: 0,
+  DB: 0,
+  IDP: 0,
 };
 
-const CORE_POSITIONS: DraftPosition[] = ["QB", "RB", "WR", "TE", "K", "DST"];
+const CORE_POSITIONS: DraftPosition[] = [
+  "QB",
+  "RB",
+  "WR",
+  "TE",
+  "K",
+  "DST",
+  "DL",
+  "LB",
+  "DB",
+  "IDP",
+];
 
 export function normalizePlayerName(value: string) {
   return value
@@ -90,9 +105,15 @@ export function pickPlayerName(pick: SleeperDraftPick) {
     .trim() || `Player ${pick.player_id}`;
 }
 
+function adjustedRank(player: PlayerIntelligence) {
+  return player.leagueRank ?? player.ecr;
+}
+
 export function pickPosition(pick: SleeperDraftPick): DraftPosition | null {
   const value = pick.metadata?.position?.toUpperCase();
   if (value === "DEF" || value === "D") return "DST";
+  if (value === "DE" || value === "DT") return "DL";
+  if (value === "CB" || value === "S") return "DB";
   return CORE_POSITIONS.includes(value as DraftPosition)
     ? (value as DraftPosition)
     : null;
@@ -215,6 +236,10 @@ function rosterRequirements(draft: Draft) {
     TE: draft.settings.slots_te,
     K: draft.settings.slots_k,
     DST: draft.settings.slots_def,
+    DL: draft.settings.slots_dl ?? 0,
+    LB: draft.settings.slots_lb ?? 0,
+    DB: draft.settings.slots_db ?? 0,
+    IDP: 0,
   } satisfies Record<DraftPosition, number>;
 }
 
@@ -262,6 +287,26 @@ function calculateNeeds(
     position: "SUPER_FLEX",
     missing: superFlexMissing,
     urgency: superFlexMissing ? "urgent" : "filled",
+  });
+  const idpFlexEligibleFilled =
+    Math.max(0, counts.DL - requirements.DL) +
+    Math.max(0, counts.LB - requirements.LB) +
+    Math.max(0, counts.DB - requirements.DB) +
+    counts.IDP;
+  const idpFlexMissing = Math.max(
+    0,
+    Math.max(
+      0,
+      (draft.settings.slots_idp_flex ?? 0) -
+        requirements.DL -
+        requirements.LB -
+        requirements.DB,
+    ) - idpFlexEligibleFilled,
+  );
+  needs.push({
+    position: "IDP_FLEX",
+    missing: idpFlexMissing,
+    urgency: idpFlexMissing ? "need" : "filled",
   });
   return needs;
 }
@@ -383,7 +428,7 @@ function replacementValue(
       if (left.projectedPoints !== null && right.projectedPoints !== null) {
         return right.projectedPoints - left.projectedPoints;
       }
-      return (left.ecr ?? 9999) - (right.ecr ?? 9999);
+      return (adjustedRank(left) ?? 9999) - (adjustedRank(right) ?? 9999);
     });
   const remainingDemand = teams.reduce((total, team) => {
     const need = team.needs.find((item) => item.position === player.position);
@@ -403,8 +448,10 @@ function replacementValue(
   ) {
     return player.projectedPoints - replacement.projectedPoints;
   }
-  if (player.ecr !== null && replacement.ecr !== null) {
-    return (replacement.ecr - player.ecr) * 0.45;
+  const playerRank = adjustedRank(player);
+  const replacementRank = adjustedRank(replacement);
+  if (playerRank !== null && replacementRank !== null) {
+    return (replacementRank - playerRank) * 0.45;
   }
   return null;
 }
@@ -416,7 +463,10 @@ function scarcityValue(
 ) {
   const pool = available
     .filter((candidate) => candidate.position === player.position)
-    .sort((left, right) => (left.ecr ?? 9999) - (right.ecr ?? 9999));
+    .sort(
+      (left, right) =>
+        (adjustedRank(left) ?? 9999) - (adjustedRank(right) ?? 9999),
+    );
   const index = pool.findIndex((candidate) => candidate.id === player.id);
   if (index < 0) return null;
   const lookahead = Math.max(2, Math.min(14, (picksUntilUser ?? 7) + 1));
@@ -425,8 +475,10 @@ function scarcityValue(
   if (player.projectedPoints !== null && later.projectedPoints !== null) {
     return player.projectedPoints - later.projectedPoints;
   }
-  if (player.ecr !== null && later.ecr !== null) {
-    return later.ecr - player.ecr;
+  const playerRank = adjustedRank(player);
+  const laterRank = adjustedRank(later);
+  if (playerRank !== null && laterRank !== null) {
+    return laterRank - playerRank;
   }
   return null;
 }
@@ -543,8 +595,9 @@ export function recommendPlayers({
       const byeConflicts = player.byeWeek
         ? draftedByeCounts.get(player.byeWeek) ?? 0
         : 0;
+      const leagueRank = adjustedRank(player);
       const rankValue =
-        player.ecr === null ? 0 : Math.max(-15, 58 - player.ecr * 0.42);
+        leagueRank === null ? 0 : Math.max(-15, 58 - leagueRank * 0.42);
       let score =
         50 +
         rankValue +
@@ -622,7 +675,12 @@ export function recommendPlayers({
         ],
       };
     })
-    .sort((left, right) => right.score - left.score || (left.player.ecr ?? 9999) - (right.player.ecr ?? 9999))
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        (adjustedRank(left.player) ?? 9999) -
+          (adjustedRank(right.player) ?? 9999),
+    )
     .slice(0, 5);
 }
 
@@ -632,7 +690,7 @@ export function cpuPlayerScore(
   round: number,
 ) {
   const need = team.needs.find((item) => item.position === player.position);
-  let score = 200 - (player.ecr ?? player.adp ?? 190);
+  let score = 200 - (adjustedRank(player) ?? player.adp ?? 190);
   score += need?.missing ? 24 + need.missing * 5 : -4;
   if ((player.position === "K" || player.position === "DST") && round < 11) {
     score -= 80;

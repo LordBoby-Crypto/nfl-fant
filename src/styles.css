@@ -3237,6 +3237,390 @@ button:focus-visible {
   height: 12px;
 }
 
+.scoring-coverage-panel {
+  margin-top: 18px;
+  padding: 18px;
+  background: #081625;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.scoring-coverage-panel > header {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.coverage-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  color: var(--accent);
+  background: rgba(186, 255, 16, 0.07);
+  border: 1px solid rgba(186, 255, 16, 0.24);
+  border-radius: 50%;
+  place-items: center;
+}
+
+.coverage-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.scoring-coverage-panel h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.scoring-coverage-panel header p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.coverage-counts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.coverage-counts > span {
+  display: grid;
+  gap: 3px;
+  min-height: 62px;
+  padding: 12px 14px;
+  background: #06131f;
+  border: 1px solid #2d4155;
+  border-radius: 4px;
+}
+
+.coverage-counts strong {
+  font-size: 18px;
+}
+
+.coverage-counts small {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.coverage-counts .is-supported strong {
+  color: #9ce8b1;
+}
+
+.coverage-counts .is-partial strong {
+  color: #ffd58c;
+}
+
+.coverage-counts .is-unsupported strong {
+  color: #ffaaa7;
+}
+
+.scoring-coverage-panel details {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.scoring-coverage-panel summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 2px 0;
+  color: #ffd58c;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scoring-coverage-panel summary svg {
+  width: 17px;
+  height: 17px;
+}
+
+.coverage-warning-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.coverage-warning-list article {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.7fr) minmax(0, 1.3fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  background: rgba(249, 185, 70, 0.045);
+  border: 1px solid rgba(249, 185, 70, 0.2);
+  border-radius: 4px;
+}
+
+.coverage-warning-list article.is-unsupported {
+  background: rgba(255, 118, 118, 0.045);
+  border-color: rgba(255, 118, 118, 0.2);
+}
+
+.coverage-warning-list article > span {
+  display: grid;
+  gap: 4px;
+}
+
+.coverage-warning-list strong {
+  font-size: 11px;
+}
+
+.coverage-warning-list small,
+.coverage-warning-list p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.coverage-warning-list code,
+.formula-terms code {
+  color: #afbdcc;
+  font-size: inherit;
+}
+
+.coverage-warning-list em,
+.formula-terms em {
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: #07131f;
+  background: #ffd58c;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.coverage-warning-list article.is-unsupported em,
+.formula-terms article.is-unsupported em {
+  background: #ffaaa7;
+}
+
+.coverage-complete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
+  color: #9ce8b1;
+  font-size: 11px;
+}
+
+.coverage-complete svg {
+  width: 16px;
+  height: 16px;
+}
+
+.player-table {
+  min-width: 930px;
+}
+
+.player-table th:nth-child(1) {
+  width: 82px;
+}
+
+.player-table th:nth-child(2) {
+  width: 25%;
+}
+
+.player-table th:nth-child(3),
+.player-table th:nth-child(4),
+.player-table th:nth-child(5) {
+  width: 64px;
+}
+
+.player-table th:nth-child(6) {
+  width: 108px;
+}
+
+.player-table th:nth-child(7) {
+  width: 74px;
+}
+
+.player-table th:nth-child(8) {
+  width: 94px;
+}
+
+.consensus-rank {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.scoring-confidence {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 25px;
+  padding: 5px 8px;
+  color: #07131f;
+  background: #9ce8b1;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.scoring-confidence.is-medium {
+  background: #ffd58c;
+}
+
+.scoring-confidence.is-low {
+  background: #ffaaa7;
+}
+
+.scoring-confidence.compact {
+  font-size: 8px;
+}
+
+.player-formula-row {
+  cursor: default !important;
+  background: #06131f;
+}
+
+.player-formula-row:hover {
+  background: #06131f !important;
+}
+
+.player-formula-row > td {
+  height: auto;
+  padding: 0;
+}
+
+.player-scoring-formula {
+  padding: 16px;
+}
+
+.player-scoring-formula > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.player-scoring-formula h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.player-scoring-formula header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.formula-total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin-top: 13px;
+  padding: 12px;
+  background: rgba(186, 255, 16, 0.045);
+  border: 1px solid rgba(186, 255, 16, 0.19);
+  border-radius: 4px;
+}
+
+.formula-total span {
+  overflow: hidden;
+  color: #aab8c7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  line-height: 1.55;
+  text-overflow: ellipsis;
+}
+
+.formula-total strong {
+  color: var(--accent);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.formula-terms {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.formula-terms article {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1.2fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  background: #081625;
+  border: 1px solid #26394c;
+  border-radius: 4px;
+}
+
+.formula-terms article.is-partial {
+  border-color: rgba(249, 185, 70, 0.28);
+}
+
+.formula-terms article.is-unsupported {
+  border-color: rgba(255, 118, 118, 0.25);
+}
+
+.formula-terms article > span {
+  display: grid;
+  gap: 3px;
+}
+
+.formula-terms strong {
+  font-size: 10px;
+}
+
+.formula-terms small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.formula-calculation {
+  text-align: right;
+}
+
+.formula-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 11px;
+  padding: 10px;
+  color: #ffd4a2;
+  background: rgba(249, 185, 70, 0.06);
+  border: 1px solid rgba(249, 185, 70, 0.24);
+  border-radius: 4px;
+}
+
+.formula-warning svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.formula-warning span {
+  display: grid;
+  gap: 3px;
+}
+
+.formula-warning strong {
+  font-size: 10px;
+}
+
+.formula-warning small {
+  color: #c7a77d;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
 .loading-screen {
   display: grid;
   min-height: 100vh;
@@ -10875,6 +11259,104 @@ button:focus-visible {
     display: block;
     color: #444;
     font-size: 8pt;
+  }
+}
+
+@media (max-width: 760px) {
+  .coverage-counts {
+    grid-template-columns: 1fr;
+  }
+
+  .coverage-counts > span {
+    min-height: 54px;
+  }
+
+  .coverage-warning-list article,
+  .formula-terms article {
+    grid-template-columns: 1fr auto;
+  }
+
+  .coverage-warning-list article p,
+  .formula-calculation {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+
+  .player-table {
+    min-width: 0;
+  }
+
+  .player-table tbody tr:not(.player-formula-row) {
+    grid-template-columns: minmax(0, 1fr) repeat(3, minmax(48px, auto));
+    min-height: 174px;
+    padding-right: 28px;
+  }
+
+  .player-table td:nth-child(5) {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+
+  .player-table td:nth-child(6) {
+    grid-column: 3 / 5;
+    grid-row: 2;
+  }
+
+  .player-table td:nth-child(7) {
+    grid-column: 1 / 3;
+    grid-row: 3;
+  }
+
+  .player-table td:nth-child(8) {
+    grid-column: 3 / 5;
+    grid-row: 3;
+  }
+
+  .player-table tbody tr.player-formula-row {
+    display: block;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .player-formula-row > td {
+    display: block;
+    width: 100%;
+    padding: 0;
+  }
+
+  .player-formula-row > td::before {
+    display: none;
+  }
+
+  .player-scoring-formula {
+    padding: 14px 10px;
+  }
+
+  .player-scoring-formula > header,
+  .formula-total {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .formula-total {
+    display: grid;
+  }
+
+  .formula-total strong {
+    white-space: normal;
+  }
+
+  .detail-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .detail-metrics span:nth-child(odd) {
+    border-right: 1px solid var(--line);
+  }
+
+  .detail-metrics span:nth-child(even) {
+    border-right: 0;
   }
 }
 
