@@ -9,6 +9,8 @@ import {
   getDraftSlotForPick,
   recommendPlayers,
   simulateToUserTurn,
+  type DraftRecommendation,
+  type RecommendationFactor,
 } from "../src/features/live-draft/engine.ts";
 import type { PlayerIntelligence } from "../src/features/player-intelligence/model.ts";
 import type {
@@ -23,6 +25,7 @@ function player(
   name: string,
   position: PlayerIntelligence["position"],
   ecr: number,
+  overrides: Partial<PlayerIntelligence> = {},
 ): PlayerIntelligence {
   return {
     id,
@@ -42,7 +45,42 @@ function player(
     practiceStatus: "",
     byeWeek: 7,
     news: [],
+    leagueRank: ecr,
+    leaguePositionRank: ecr,
+    leagueTier: 1,
+    replacementValue: 40 - ecr,
+    scarcityAdjustedValue: 45 - ecr,
+    ...overrides,
   };
+}
+
+function draftedPlayer(
+  pickNo: number,
+  player: PlayerIntelligence,
+  rosterId: number,
+): SleeperDraftPick {
+  return {
+    player_id: player.id,
+    picked_by: `u${rosterId}`,
+    roster_id: rosterId,
+    round: Math.floor((pickNo - 1) / draft.settings.teams) + 1,
+    draft_slot: rosterId,
+    pick_no: pickNo,
+    is_keeper: false,
+    metadata: {
+      first_name: player.name.split(" ")[0],
+      last_name: player.name.split(" ").slice(1).join(" "),
+      team: player.team,
+      position: player.position,
+    },
+  };
+}
+
+function factorScore(
+  recommendation: DraftRecommendation,
+  key: RecommendationFactor["key"],
+) {
+  return recommendation.factors?.find((factor) => factor.key === key)?.score ?? 0;
 }
 
 const draft: Draft = {
@@ -169,11 +207,34 @@ test("recommendations honor avoid and target controls while explaining all facto
       sleeper: [],
       avoid: ["1"],
     },
+    draft,
   });
   assert.equal(recommendations.length, 5);
   assert.equal(recommendations.some((item) => item.player.id === "1"), false);
   assert.equal(recommendations[0].player.id, "2");
-  assert.equal(recommendations.every((item) => item.reasons.length === 6), true);
+  assert.equal(recommendations.every((item) => item.reasons.length === 16), true);
+  assert.deepEqual(
+    recommendations[0].factors?.map((factor) => factor.key),
+    [
+      "league-value",
+      "rank",
+      "replacement",
+      "tier-scarcity",
+      "adp",
+      "outcome-range",
+      "availability-risk",
+      "expert-agreement",
+      "offense-role",
+      "roster-fit",
+      "bench-balance",
+      "concentration",
+      "stack-correlation",
+      "draft-market",
+      "opponent-demand",
+      "draft-controls",
+    ],
+  );
+  assert.equal(recommendations[0].outcomeRange?.expected, 298);
 });
 
 test("avoided players never re-enter recommendations when the pool is small", () => {
@@ -194,6 +255,170 @@ test("avoided players never re-enter recommendations when the pool is small", ()
     },
   });
   assert.deepEqual(recommendations, []);
+});
+
+test("SUPER_FLEX demand and unfilled starters beat redundant bench depth", () => {
+  const superflexDraft: Draft = {
+    ...draft,
+    settings: {
+      ...draft.settings,
+      slots_super_flex: 1,
+    },
+  };
+  const firstQb = player("qb-1", "Roster Quarterback", "QB", 20);
+  const secondQb = player("qb-2", "Superflex Quarterback", "QB", 21);
+  const thirdQb = player("qb-3", "Excess Quarterback", "QB", 22);
+  const receiver = player("wr-open", "Open Starter Receiver", "WR", 23);
+  const picks = [
+    draftedPlayer(1, firstQb, 2),
+    draftedPlayer(2, secondQb, 2),
+  ];
+  const teams = buildTeamDraftStates({
+    draft: superflexDraft,
+    users,
+    rosters,
+    picks,
+  });
+  const recommendations = recommendPlayers({
+    available: [thirdQb, receiver],
+    allPlayers: [firstQb, secondQb, thirdQb, receiver],
+    teams,
+    userRosterId: 2,
+    cursor: getDraftCursor(superflexDraft, picks, 2),
+    controls: {
+      watchlist: [],
+      queue: [],
+      target: [],
+      sleeper: [],
+      avoid: [],
+    },
+    draft: superflexDraft,
+  });
+  const excess = recommendations.find((item) => item.player.id === thirdQb.id)!;
+  const openStarter = recommendations.find(
+    (item) => item.player.id === receiver.id,
+  )!;
+  assert.equal(recommendations[0].player.id, receiver.id);
+  assert.equal(factorScore(excess, "bench-balance") < 0, true);
+  assert.equal(
+    factorScore(openStarter, "roster-fit") >
+      factorScore(excess, "roster-fit"),
+    true,
+  );
+});
+
+test("the engine scores useful stacks, bye/risk concentration and role uncertainty", () => {
+  const rosterQb = player("stack-qb", "Dallas Quarterback", "QB", 15, {
+    team: "DAL",
+    byeWeek: 9,
+  });
+  const stackReceiver = player("stack-wr", "Dallas Receiver", "WR", 16, {
+    team: "DAL",
+    byeWeek: 9,
+  });
+  const uncertainReceiver = player(
+    "risk-wr",
+    "Uncertain Receiver",
+    "WR",
+    16,
+    {
+      team: "NYJ",
+      byeWeek: 9,
+      injuryStatus: "Questionable",
+      news: [
+        {
+          id: "role",
+          title: "Workload competition",
+          summary: "Expected to split snaps in a committee.",
+          impact: "Uncertain role and limited workload.",
+          publishedAt: null,
+          sourceUrl: null,
+        },
+      ],
+    },
+  );
+  const picks = [draftedPlayer(1, rosterQb, 2)];
+  const teams = buildTeamDraftStates({ draft, users, rosters, picks });
+  const recommendations = recommendPlayers({
+    available: [uncertainReceiver, stackReceiver],
+    allPlayers: [rosterQb, uncertainReceiver, stackReceiver],
+    teams,
+    userRosterId: 2,
+    cursor: getDraftCursor(draft, picks, 2),
+    controls: {
+      watchlist: [],
+      queue: [],
+      target: [],
+      sleeper: [],
+      avoid: [],
+    },
+    draft,
+  });
+  const stack = recommendations.find((item) => item.player.id === stackReceiver.id)!;
+  const uncertain = recommendations.find(
+    (item) => item.player.id === uncertainReceiver.id,
+  )!;
+  assert.equal(
+    factorScore(stack, "stack-correlation") > 0,
+    true,
+  );
+  assert.equal(uncertain.risk, "Medium");
+  assert.equal(
+    factorScore(uncertain, "availability-risk") < 0,
+    true,
+  );
+  assert.equal(
+    (uncertain.outcomeRange?.ceiling ?? 0) -
+      (uncertain.outcomeRange?.floor ?? 0) >
+      (stack.outcomeRange?.ceiling ?? 0) - (stack.outcomeRange?.floor ?? 0),
+    true,
+  );
+});
+
+test("all opponent rosters, picks before the turn, runs and slides affect market pressure", () => {
+  const runPlayers = Array.from({ length: 4 }, (_, index) =>
+    player(`run-${index}`, `Run Back ${index}`, "RB", index + 1),
+  );
+  const otherPlayers = [
+    player("recent-wr", "Recent Receiver", "WR", 5),
+    player("recent-te", "Recent Tight End", "TE", 6),
+  ];
+  const picks = [...runPlayers, ...otherPlayers].map((item, index) =>
+    draftedPlayer(index + 1, item, (index % 4) + 1),
+  );
+  const slidingBack = player("slide-rb", "Sliding Runner", "RB", 7, {
+    adp: 1,
+  });
+  const teams = buildTeamDraftStates({ draft, users, rosters, picks });
+  const recommendation = recommendPlayers({
+    available: [slidingBack],
+    allPlayers: [...runPlayers, ...otherPlayers, slidingBack],
+    teams,
+    userRosterId: 2,
+    cursor: getDraftCursor(draft, picks, 2),
+    controls: {
+      watchlist: [slidingBack.id],
+      queue: [slidingBack.id],
+      target: [slidingBack.id],
+      sleeper: [slidingBack.id],
+      avoid: [],
+    },
+    draft,
+  })[0];
+  const market = recommendation.factors?.find(
+    (factor) => factor.key === "draft-market",
+  );
+  const opponents = recommendation.factors?.find(
+    (factor) => factor.key === "opponent-demand",
+  );
+  const saved = recommendation.factors?.find(
+    (factor) => factor.key === "draft-controls",
+  );
+  assert.equal((market?.score ?? 0) >= 10, true);
+  assert.match(market?.value ?? "", /4 RBs in the last 6 picks/);
+  assert.match(opponents?.value ?? "", /opponent roster/);
+  assert.equal((saved?.score ?? 0) > 20, true);
+  assert.match(saved?.value ?? "", /Watch.*Target.*Sleeper.*Queue #1/);
 });
 
 test("pre-draft simulator stops at each user turn", () => {

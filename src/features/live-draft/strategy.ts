@@ -852,6 +852,8 @@ export function runDraftSimulations({
           userRosterId,
           cursor,
           controls,
+          draft,
+          slotMap,
         });
         const ceiling = Math.min(3, recommendations.length);
         player =
@@ -1029,6 +1031,8 @@ export function runDraftSimulationsDetailed({
           userRosterId: input.userRosterId,
           cursor,
           controls,
+          draft: input.draft,
+          slotMap: input.slotMap,
         })[Math.floor(mulberry32(run * 17_171 + cursor.currentPick)() * 2)] ??
           recommendPlayers({
             available: pool,
@@ -1037,6 +1041,8 @@ export function runDraftSimulationsDetailed({
             userRosterId: input.userRosterId,
             cursor,
             controls,
+            draft: input.draft,
+            slotMap: input.slotMap,
           })[0];
         if (!recommendation) break;
         const roster = input.rosters.find(

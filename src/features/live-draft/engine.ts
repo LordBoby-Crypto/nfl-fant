@@ -44,6 +44,27 @@ export interface RecommendationReason {
   tone: "positive" | "neutral" | "warning";
 }
 
+export interface RecommendationFactor extends RecommendationReason {
+  key:
+    | "league-value"
+    | "rank"
+    | "replacement"
+    | "tier-scarcity"
+    | "adp"
+    | "outcome-range"
+    | "availability-risk"
+    | "expert-agreement"
+    | "offense-role"
+    | "roster-fit"
+    | "bench-balance"
+    | "concentration"
+    | "stack-correlation"
+    | "draft-market"
+    | "opponent-demand"
+    | "draft-controls";
+  score: number;
+}
+
 export interface DraftRecommendation {
   player: PlayerIntelligence;
   score: number;
@@ -52,6 +73,13 @@ export interface DraftRecommendation {
   adpDelta: number | null;
   risk: "Low" | "Medium" | "High";
   reasons: RecommendationReason[];
+  factors?: RecommendationFactor[];
+  outcomeRange?: {
+    floor: number | null;
+    expected: number | null;
+    ceiling: number | null;
+  };
+  modelConfidence?: "High" | "Medium" | "Low";
 }
 
 export interface DraftCursor {
@@ -427,19 +455,53 @@ export function draftPickForPlayer(
   );
 }
 
-function injuryRisk(player: PlayerIntelligence): DraftRecommendation["risk"] {
+function bounded(value: number, minimum: number, maximum: number) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function playerRiskProfile(player: PlayerIntelligence) {
   const context = [
     player.injuryStatus,
     player.injuryDetail,
     player.practiceStatus,
+    ...player.news.flatMap((item) => [item.title, item.summary, item.impact]),
   ]
     .join(" ")
     .toLocaleLowerCase();
-  if (/(out|injured reserve|\bir\b|pup|suspend|season)/.test(context)) return "High";
-  if (/(questionable|doubtful|limited|injur|recover|rehab)/.test(context)) {
-    return "Medium";
-  }
-  return "Low";
+  const availabilityConcern =
+    /(out|injured reserve|\bir\b|pup|suspend|banned|holdout|season-ending)/.test(
+      context,
+    );
+  const healthConcern =
+    /(questionable|doubtful|limited|injur|recover|rehab|surgery|hamstring|concussion)/.test(
+      context,
+    );
+  const roleConcern =
+    /(committee|timeshare|backup|competition|competing|uncertain role|workload limit|snap count|reduced role|could lose|split carries)/.test(
+      context,
+    );
+  const risk: DraftRecommendation["risk"] = availabilityConcern
+    ? "High"
+    : healthConcern || roleConcern
+      ? "Medium"
+      : "Low";
+  const penalty =
+    (availabilityConcern ? 28 : healthConcern ? 10 : 0) +
+    (roleConcern ? 7 : 0);
+  const labels = [
+    availabilityConcern ? "availability" : "",
+    healthConcern ? "health/workload" : "",
+    roleConcern ? "role competition" : "",
+  ].filter(Boolean);
+  return {
+    risk,
+    penalty,
+    roleConcern,
+    detail:
+      labels.length > 0
+        ? `${risk} — ${labels.join(" + ")} uncertainty`
+        : "Low — no active availability, workload or role warning",
+  };
 }
 
 function replacementValue(
@@ -508,6 +570,14 @@ function scarcityValue(
   return null;
 }
 
+function rosterRequirement(
+  team: TeamDraftState,
+  position: DraftPosition,
+) {
+  const need = team.needs.find((item) => item.position === position);
+  return team.counts[position] + (need?.missing ?? 0);
+}
+
 function needWeight(
   player: PlayerIntelligence,
   userTeam: TeamDraftState,
@@ -550,6 +620,382 @@ function needWeight(
   return score;
 }
 
+function flexEligible(position: PlayerPosition) {
+  return position === "RB" || position === "WR" || position === "TE";
+}
+
+function superFlexEligible(position: PlayerPosition) {
+  return position === "QB" || flexEligible(position);
+}
+
+function idpFlexEligible(position: PlayerPosition) {
+  return position === "DL" || position === "LB" || position === "DB" || position === "IDP";
+}
+
+function playerForPick(
+  pick: SleeperDraftPick,
+  playersById: Map<string, PlayerIntelligence>,
+  playersByName: Map<string, PlayerIntelligence>,
+) {
+  return (
+    playersById.get(String(pick.player_id)) ??
+    playersByName.get(normalizePlayerName(pickPlayerName(pick))) ??
+    null
+  );
+}
+
+function starterAndFlexFit(
+  player: PlayerIntelligence,
+  team: TeamDraftState,
+  round: number,
+) {
+  const exact = team.needs.find((need) => need.position === player.position);
+  const flex = team.needs.find((need) => need.position === "FLEX");
+  const superFlex = team.needs.find((need) => need.position === "SUPER_FLEX");
+  const idpFlex = team.needs.find((need) => need.position === "IDP_FLEX");
+  let score = needWeight(player, team, round);
+  const fits: string[] = [];
+  if (exact?.missing) fits.push(`${exact.missing} direct starter slot${exact.missing === 1 ? "" : "s"}`);
+  if (flex?.missing && flexEligible(player.position)) fits.push("FLEX");
+  if (superFlex?.missing && superFlexEligible(player.position)) fits.push("SUPER_FLEX");
+  if (idpFlex?.missing && idpFlexEligible(player.position)) fits.push("IDP_FLEX");
+  if (!fits.length) {
+    score = Math.min(score, -3);
+  }
+  return {
+    score: bounded(score, -32, 42),
+    detail: fits.length
+      ? `Fills ${fits.join(" + ")}`
+      : `${player.position} is currently a depth selection`,
+  };
+}
+
+function benchBalance(
+  player: PlayerIntelligence,
+  team: TeamDraftState,
+) {
+  if (player.position === "—") {
+    return { score: -30, detail: "Unknown position cannot fill a roster slot" };
+  }
+  const position = player.position;
+  const directRequirement = rosterRequirement(team, position);
+  const count = team.counts[position];
+  const flexCapacity =
+    flexEligible(player.position)
+      ? team.needs.find((need) => need.position === "FLEX")?.missing ?? 0
+      : 0;
+  const superFlexCapacity =
+    superFlexEligible(player.position)
+      ? team.needs.find((need) => need.position === "SUPER_FLEX")?.missing ?? 0
+      : 0;
+  const idpFlexCapacity =
+    idpFlexEligible(player.position)
+      ? team.needs.find((need) => need.position === "IDP_FLEX")?.missing ?? 0
+      : 0;
+  const usefulCapacity =
+    directRequirement + flexCapacity + superFlexCapacity + idpFlexCapacity;
+  const positionTarget =
+    player.position === "RB" || player.position === "WR"
+      ? usefulCapacity + 2
+      : player.position === "QB" && superFlexCapacity
+        ? usefulCapacity + 1
+        : usefulCapacity;
+  const afterPick = count + 1;
+  const excess = Math.max(0, afterPick - Math.max(1, positionTarget));
+  const otherOpenStarters = team.needs
+    .filter(
+      (need) =>
+        need.missing > 0 &&
+        need.position !== player.position &&
+        need.position !== "FLEX" &&
+        need.position !== "SUPER_FLEX" &&
+        need.position !== "IDP_FLEX",
+    )
+    .reduce((total, need) => total + need.missing, 0);
+  const score = excess
+    ? -bounded(8 + excess * 7 + otherOpenStarters * 2, 8, 30)
+    : otherOpenStarters === 0 && afterPick <= positionTarget
+      ? 4
+      : 0;
+  return {
+    score,
+    detail: excess
+      ? `${afterPick} ${player.position}s would exceed the useful depth target while ${otherOpenStarters} other starter slot${otherOpenStarters === 1 ? "" : "s"} remain`
+      : `${afterPick} ${player.position}${afterPick === 1 ? "" : "s"} stays within the roster depth target`,
+  };
+}
+
+function outcomeRange(
+  player: PlayerIntelligence,
+  risk: ReturnType<typeof playerRiskProfile>,
+) {
+  const expected = player.projectedPoints;
+  if (expected === null) {
+    return {
+      floor: null,
+      expected: null,
+      ceiling: null,
+      spread: null,
+    };
+  }
+  const expertSpread =
+    player.expertBest !== null && player.expertWorst !== null
+      ? Math.max(0, player.expertWorst - player.expertBest)
+      : null;
+  const volatility =
+    0.09 +
+    bounded((expertSpread ?? 8) / 180, 0.02, 0.16) +
+    (risk.risk === "High" ? 0.14 : risk.risk === "Medium" ? 0.07 : 0);
+  return {
+    floor: Math.max(0, expected * (1 - volatility)),
+    expected,
+    ceiling: expected * (1 + volatility * 0.82),
+    spread: volatility,
+  };
+}
+
+function expertAgreement(player: PlayerIntelligence) {
+  const spread =
+    player.expertBest !== null && player.expertWorst !== null
+      ? Math.max(0, player.expertWorst - player.expertBest)
+      : null;
+  if (spread === null) {
+    return { score: -2, detail: "Expert range unavailable" };
+  }
+  if (spread <= 8) {
+    return { score: 4, detail: `${spread}-rank expert spread — strong agreement` };
+  }
+  if (spread <= 18) {
+    return { score: 0, detail: `${spread}-rank expert spread — normal disagreement` };
+  }
+  return {
+    score: -bounded((spread - 18) * 0.35, 3, 12),
+    detail: `${spread}-rank expert spread — volatile evaluation`,
+  };
+}
+
+function offenseAndRoleContext(
+  player: PlayerIntelligence,
+  allPlayers: PlayerIntelligence[],
+) {
+  if (!player.team || player.team === "FA") {
+    return { score: 0, detail: "NFL team context unavailable" };
+  }
+  const teammates = allPlayers.filter(
+    (candidate) =>
+      candidate.id !== player.id &&
+      candidate.team === player.team &&
+      candidate.position !== "—",
+  );
+  const supportingSkillPlayers = teammates.filter(
+    (candidate) =>
+      (candidate.position === "QB" ||
+        candidate.position === "RB" ||
+        candidate.position === "WR" ||
+        candidate.position === "TE") &&
+      (adjustedRank(candidate) ?? 9999) <= 120,
+  );
+  const samePositionCompetition = teammates.filter(
+    (candidate) =>
+      candidate.position === player.position &&
+      (adjustedRank(candidate) ?? 9999) <=
+        (adjustedRank(player) ?? 180) + 40,
+  );
+  const environmentBonus = Math.min(5, supportingSkillPlayers.length * 1.2);
+  const competitionPenalty = Math.min(8, samePositionCompetition.length * 2.5);
+  return {
+    score: environmentBonus - competitionPenalty,
+    detail: `${supportingSkillPlayers.length} fantasy-relevant teammate${supportingSkillPlayers.length === 1 ? "" : "s"}; ${samePositionCompetition.length} nearby ${player.position} competitor${samePositionCompetition.length === 1 ? "" : "s"}`,
+  };
+}
+
+function rosterConcentrations(
+  player: PlayerIntelligence,
+  rosterPlayers: PlayerIntelligence[],
+  risk: ReturnType<typeof playerRiskProfile>,
+) {
+  const byeConflicts = player.byeWeek
+    ? rosterPlayers.filter((candidate) => candidate.byeWeek === player.byeWeek).length
+    : 0;
+  const riskyPlayers = rosterPlayers.filter(
+    (candidate) => playerRiskProfile(candidate).risk !== "Low",
+  ).length;
+  const riskConcentration =
+    risk.risk !== "Low" && riskyPlayers >= 2 ? riskyPlayers + 1 : riskyPlayers;
+  const score =
+    -byeConflicts * 4 -
+    (risk.risk !== "Low" ? Math.max(0, riskConcentration - 2) * 3 : 0);
+  return {
+    score: bounded(score, -24, 0),
+    byeConflicts,
+    detail: `${player.byeWeek ? `Week ${player.byeWeek}: ${byeConflicts} conflict${byeConflicts === 1 ? "" : "s"}` : "Bye unknown"}; ${riskyPlayers} current injury/role risk${riskyPlayers === 1 ? "" : "s"}`,
+  };
+}
+
+function stackAndCorrelation(
+  player: PlayerIntelligence,
+  rosterPlayers: PlayerIntelligence[],
+) {
+  const sameTeam = rosterPlayers.filter(
+    (candidate) => player.team && candidate.team === player.team,
+  );
+  const stackPartner = sameTeam.find(
+    (candidate) =>
+      (player.position === "QB" &&
+        (candidate.position === "WR" || candidate.position === "TE")) ||
+      ((player.position === "WR" || player.position === "TE") &&
+        candidate.position === "QB"),
+  );
+  const usefulSecondary =
+    sameTeam.some(
+      (candidate) =>
+        (player.position === "RB" && candidate.position === "DST") ||
+        (player.position === "DST" && candidate.position === "RB"),
+    );
+  const stackBonus = stackPartner ? 6 : usefulSecondary ? 2 : 0;
+  const correlationPenalty = Math.max(0, sameTeam.length - (stackPartner ? 1 : 0)) * 2;
+  return {
+    score: bounded(stackBonus - correlationPenalty, -10, 6),
+    detail: stackPartner
+      ? `Useful ${player.position} stack with ${stackPartner.name}; ${sameTeam.length} existing ${player.team} player${sameTeam.length === 1 ? "" : "s"}`
+      : sameTeam.length
+        ? `${sameTeam.length} existing ${player.team} player${sameTeam.length === 1 ? "" : "s"} adds correlated risk`
+        : "No stack bonus or same-team concentration",
+  };
+}
+
+function recentMarketPressure(
+  player: PlayerIntelligence,
+  teams: TeamDraftState[],
+  adpDelta: number | null,
+) {
+  const picks = teams
+    .flatMap((team) => team.picks)
+    .sort((left, right) => left.pick_no - right.pick_no);
+  const recent = picks.slice(-6);
+  const runCount = recent.filter(
+    (pick) => pickPosition(pick) === player.position,
+  ).length;
+  const runBonus = runCount >= 4 ? 10 : runCount === 3 ? 5 : 0;
+  const slideBonus =
+    adpDelta === null ? 0 : bounded(adpDelta * 0.45, -10, 14);
+  return {
+    score: runBonus + slideBonus,
+    detail: `${runCount} ${player.position}${runCount === 1 ? "" : "s"} in the last ${recent.length} picks; ${
+      adpDelta === null
+        ? "ADP unavailable"
+        : adpDelta >= 0
+          ? `${Math.round(adpDelta)}-pick slide`
+          : `${Math.round(Math.abs(adpDelta))} picks ahead of ADP`
+    }`,
+  };
+}
+
+function upcomingOpponentDemand(
+  player: PlayerIntelligence,
+  teams: TeamDraftState[],
+  cursor: DraftCursor,
+  userRosterId: number,
+  draft?: Draft,
+  slotMap?: Record<string, number>,
+) {
+  if (!draft) {
+    return { score: 0, teams: 0, detail: "No opponents pick before the next user turn" };
+  }
+  let nextUserPick =
+    cursor.nextUserPick !== null && cursor.nextUserPick > cursor.currentPick
+      ? cursor.nextUserPick
+      : null;
+  if (nextUserPick === null) {
+    const totalPicks = draft.settings.teams * draft.settings.rounds;
+    for (
+      let pickNumber = cursor.currentPick + 1;
+      pickNumber <= totalPicks;
+      pickNumber += 1
+    ) {
+      const slot = getDraftSlotForPick(
+        pickNumber,
+        draft.settings.teams,
+        draft.type,
+      );
+      if (
+        Number((slotMap ?? draft.slot_to_roster_id)[String(slot)]) ===
+        userRosterId
+      ) {
+        nextUserPick = pickNumber;
+        break;
+      }
+    }
+  }
+  if (nextUserPick === null) {
+    return { score: 0, teams: 0, detail: "No opponents pick before the next user turn" };
+  }
+  const teamsByRoster = new Map(teams.map((team) => [team.rosterId, team]));
+  const upcoming = new Map<number, TeamDraftState>();
+  for (
+    let pickNumber = cursor.currentPick;
+    pickNumber < nextUserPick;
+    pickNumber += 1
+  ) {
+    const slot = getDraftSlotForPick(
+      pickNumber,
+      draft.settings.teams,
+      draft.type,
+    );
+    const rosterId = Number(
+      (slotMap ?? draft.slot_to_roster_id)[String(slot)],
+    );
+    const team = teamsByRoster.get(rosterId);
+    if (team) upcoming.set(rosterId, team);
+  }
+  const demand = [...upcoming.values()].filter((team) => {
+    const exact = team.needs.find((need) => need.position === player.position);
+    const flex = team.needs.find((need) => need.position === "FLEX");
+    const superFlex = team.needs.find((need) => need.position === "SUPER_FLEX");
+    const idpFlex = team.needs.find((need) => need.position === "IDP_FLEX");
+    return Boolean(
+      exact?.missing ||
+        (flex?.missing && flexEligible(player.position)) ||
+        (superFlex?.missing && superFlexEligible(player.position)) ||
+        (idpFlex?.missing && idpFlexEligible(player.position)),
+    );
+  });
+  return {
+    score: bounded(demand.length * 2.25, 0, 14),
+    teams: demand.length,
+    detail: `${demand.length} of ${upcoming.size} opponent roster${upcoming.size === 1 ? "" : "s"} before your next turn need ${player.position} or an eligible flex`,
+  };
+}
+
+function draftControlInfluence(
+  player: PlayerIntelligence,
+  controls: DraftControlState,
+) {
+  const labels: string[] = [];
+  let score = 0;
+  if (controls.watchlist.includes(player.id)) {
+    score += 3;
+    labels.push("Watch");
+  }
+  if (controls.target.includes(player.id)) {
+    score += 10;
+    labels.push("Target");
+  }
+  if (controls.sleeper.includes(player.id)) {
+    score += 6;
+    labels.push("Sleeper");
+  }
+  const queueIndex = controls.queue.indexOf(player.id);
+  if (queueIndex >= 0) {
+    score += Math.max(4, 14 - queueIndex * 2);
+    labels.push(`Queue #${queueIndex + 1}`);
+  }
+  return {
+    score,
+    detail: labels.length ? labels.join(" + ") : "No saved user control",
+  };
+}
+
 function adpDescription(adpDelta: number | null, nextPick: number) {
   if (adpDelta === null) {
     return { value: "No ADP available", tone: "neutral" as const };
@@ -579,6 +1025,8 @@ export function recommendPlayers({
   userRosterId,
   cursor,
   controls,
+  draft,
+  slotMap,
   limit = 5,
 }: {
   available: PlayerIntelligence[];
@@ -587,27 +1035,20 @@ export function recommendPlayers({
   userRosterId: number;
   cursor: DraftCursor;
   controls: DraftControlState;
+  draft?: Draft;
+  slotMap?: Record<string, number>;
   limit?: number;
 }) {
   const userTeam = teams.find((team) => team.rosterId === userRosterId);
   if (!userTeam) return [];
   const nextPick = cursor.nextUserPick ?? cursor.currentPick;
-  const draftedByeCounts = new Map<number, number>();
   const allPlayersById = new Map(allPlayers.map((player) => [player.id, player]));
   const allPlayersByName = new Map(
     allPlayers.map((player) => [normalizePlayerName(player.name), player]),
   );
-  for (const pick of userTeam.picks) {
-    const matched =
-      allPlayersById.get(pick.player_id) ??
-      allPlayersByName.get(normalizePlayerName(pickPlayerName(pick)));
-    if (matched?.byeWeek) {
-      draftedByeCounts.set(
-        matched.byeWeek,
-        (draftedByeCounts.get(matched.byeWeek) ?? 0) + 1,
-      );
-    }
-  }
+  const rosterPlayers = userTeam.picks
+    .map((pick) => playerForPick(pick, allPlayersById, allPlayersByName))
+    .filter((player): player is PlayerIntelligence => Boolean(player));
 
   return available
     .filter(
@@ -618,38 +1059,188 @@ export function recommendPlayers({
       const vor = replacementValue(player, available, teams);
       const scarcity = scarcityValue(player, available, cursor.picksUntilUser);
       const adpDelta = player.adp === null ? null : nextPick - player.adp;
-      const risk = injuryRisk(player);
-      const byeConflicts = player.byeWeek
-        ? draftedByeCounts.get(player.byeWeek) ?? 0
-        : 0;
-      const leagueRank = adjustedRank(player);
-      const rankValue =
-        leagueRank === null ? 0 : Math.max(-15, 58 - leagueRank * 0.42);
-      let score =
-        50 +
-        rankValue +
-        (vor ?? 0) * 0.7 +
-        (scarcity ?? 0) * 0.45 +
-        needWeight(player, userTeam, cursor.currentRound) +
-        Math.max(-15, Math.min(18, (adpDelta ?? 0) * 0.55)) -
-        (risk === "High" ? 34 : risk === "Medium" ? 12 : 0) -
-        byeConflicts * 6;
-
-      if (controls.watchlist.includes(player.id)) score += 5;
-      if (controls.target.includes(player.id)) score += 18;
-      if (controls.sleeper.includes(player.id)) score += 9;
-      const queueIndex = controls.queue.indexOf(player.id);
-      if (queueIndex >= 0) score += Math.max(8, 24 - queueIndex * 3);
-      const exactNeed = userTeam.needs.find(
-        (need) => need.position === player.position,
+      const riskProfile = playerRiskProfile(player);
+      const risk = riskProfile.risk;
+      const range = outcomeRange(player, riskProfile);
+      const agreement = expertAgreement(player);
+      const offenseRole = offenseAndRoleContext(player, allPlayers);
+      const rosterFit = starterAndFlexFit(player, userTeam, cursor.currentRound);
+      const balance = benchBalance(player, userTeam);
+      const concentration = rosterConcentrations(
+        player,
+        rosterPlayers,
+        riskProfile,
       );
-      const adp = adpDescription(adpDelta, nextPick);
-      const bye = player.byeWeek
-        ? byeConflicts
-          ? `Week ${player.byeWeek}; conflicts with ${byeConflicts} rostered player${byeConflicts === 1 ? "" : "s"}`
-          : `Week ${player.byeWeek}; no current conflict`
-        : "Bye week not available";
-
+      const stack = stackAndCorrelation(player, rosterPlayers);
+      const market = recentMarketPressure(player, teams, adpDelta);
+      const opponentDemand = upcomingOpponentDemand(
+        player,
+        teams,
+        cursor,
+        userRosterId,
+        draft,
+        slotMap,
+      );
+      const control = draftControlInfluence(player, controls);
+      const leagueRank = adjustedRank(player);
+      const leagueValueScore =
+        player.scarcityAdjustedValue !== null &&
+        player.scarcityAdjustedValue !== undefined
+          ? bounded(player.scarcityAdjustedValue * 0.08, -8, 18)
+          : player.projectedPoints !== null
+            ? bounded(player.projectedPoints * 0.025, 0, 12)
+            : 0;
+      const rankScore =
+        leagueRank === null
+          ? 0
+          : bounded(20 - leagueRank * 0.12, -8, 20) +
+            (player.leaguePositionRank !== null &&
+            player.leaguePositionRank !== undefined
+              ? bounded(8 - player.leaguePositionRank * 0.35, -4, 8)
+              : 0);
+      const replacementScore = bounded((vor ?? 0) * 0.45, -10, 18);
+      const tierScore = bounded((scarcity ?? 0) * 0.35, -6, 16);
+      const adpScore = bounded((adpDelta ?? 0) * 0.3, -9, 10);
+      const expectedScore =
+        range.expected === null
+          ? -4
+          : bounded(
+              range.expected * 0.018 -
+                (range.spread ?? 0) * 8,
+              -4,
+              10,
+            );
+      const factors: RecommendationFactor[] = [
+        {
+          key: "league-value",
+          label: "League-adjusted projection",
+          score: leagueValueScore,
+          value:
+            player.projectedPoints === null
+              ? "Projection unavailable"
+              : `${player.projectedPoints.toFixed(1)} projected points`,
+          tone: leagueValueScore > 7 ? "positive" : "neutral",
+        },
+        {
+          key: "rank",
+          label: "Overall + position rank",
+          score: rankScore,
+          value: `#${leagueRank ?? "—"} overall · #${
+            player.leaguePositionRank ??
+            (player.positionRank || "—")
+          } ${player.position}`,
+          tone: rankScore > 10 ? "positive" : "neutral",
+        },
+        {
+          key: "replacement",
+          label: "Value over replacement",
+          score: replacementScore,
+          value:
+            vor === null
+              ? "Projection baseline unavailable"
+              : `${vor >= 0 ? "+" : ""}${vor.toFixed(1)} points`,
+          tone: replacementScore > 5 ? "positive" : replacementScore < 0 ? "warning" : "neutral",
+        },
+        {
+          key: "tier-scarcity",
+          label: "Tier drop + scarcity",
+          score: tierScore,
+          value:
+            scarcity === null
+              ? `Tier ${player.leagueTier ?? player.tier ?? "—"} · stable`
+              : `Tier ${player.leagueTier ?? player.tier ?? "—"} · ${scarcity.toFixed(1)} drop`,
+          tone: tierScore > 5 ? "positive" : "neutral",
+        },
+        {
+          key: "adp",
+          label: "ADP value",
+          score: adpScore,
+          ...adpDescription(adpDelta, nextPick),
+        },
+        {
+          key: "outcome-range",
+          label: "Floor / expected / ceiling",
+          score: expectedScore,
+          value:
+            range.expected === null
+              ? "Projection range unavailable"
+              : `${range.floor!.toFixed(1)} / ${range.expected.toFixed(1)} / ${range.ceiling!.toFixed(1)}`,
+          tone: expectedScore > 5 ? "positive" : "neutral",
+        },
+        {
+          key: "availability-risk",
+          label: "Injury / suspension / workload",
+          score: -riskProfile.penalty,
+          value: riskProfile.detail,
+          tone: risk === "Low" ? "neutral" : "warning",
+        },
+        {
+          key: "expert-agreement",
+          label: "Expert disagreement",
+          score: agreement.score,
+          value: agreement.detail,
+          tone: agreement.score > 0 ? "positive" : agreement.score < 0 ? "warning" : "neutral",
+        },
+        {
+          key: "offense-role",
+          label: "Offense + depth-chart competition",
+          score: offenseRole.score,
+          value: offenseRole.detail,
+          tone: offenseRole.score > 2 ? "positive" : offenseRole.score < -2 ? "warning" : "neutral",
+        },
+        {
+          key: "roster-fit",
+          label: "Starting lineup + flex fit",
+          score: rosterFit.score,
+          value: rosterFit.detail,
+          tone: rosterFit.score > 5 ? "positive" : rosterFit.score < 0 ? "warning" : "neutral",
+        },
+        {
+          key: "bench-balance",
+          label: "Bench balance + positional depth",
+          score: balance.score,
+          value: balance.detail,
+          tone: balance.score > 0 ? "positive" : balance.score < 0 ? "warning" : "neutral",
+        },
+        {
+          key: "concentration",
+          label: "Bye + injury-risk concentration",
+          score: concentration.score,
+          value: concentration.detail,
+          tone: concentration.score < 0 ? "warning" : "neutral",
+        },
+        {
+          key: "stack-correlation",
+          label: "Stacks + correlated risk",
+          score: stack.score,
+          value: stack.detail,
+          tone: stack.score > 0 ? "positive" : stack.score < 0 ? "warning" : "neutral",
+        },
+        {
+          key: "draft-market",
+          label: "Position run + unexpected slide",
+          score: market.score,
+          value: market.detail,
+          tone: market.score > 5 ? "positive" : market.score < 0 ? "warning" : "neutral",
+        },
+        {
+          key: "opponent-demand",
+          label: "Opponents before your next turn",
+          score: opponentDemand.score,
+          value: opponentDemand.detail,
+          tone: opponentDemand.score > 5 ? "positive" : "neutral",
+        },
+        {
+          key: "draft-controls",
+          label: "Queue / Target / Sleeper / Watch",
+          score: control.score,
+          value: control.detail,
+          tone: control.score > 0 ? "positive" : "neutral",
+        },
+      ];
+      const score =
+        50 +
+        factors.reduce((total, factor) => total + factor.score, 0);
       return {
         player,
         score: Math.round(score),
@@ -657,49 +1248,22 @@ export function recommendPlayers({
         scarcity,
         adpDelta,
         risk,
-        reasons: [
-          {
-            label: "Value over replacement",
-            value:
-              vor === null
-                ? "Projection baseline unavailable"
-                : `${vor >= 0 ? "+" : ""}${vor.toFixed(1)} points`,
-            tone: vor !== null && vor > 8 ? "positive" : "neutral",
-          },
-          {
-            label: "Positional scarcity",
-            value:
-              scarcity === null
-                ? "Stable tier"
-                : `${scarcity.toFixed(1)} drop before your next turn`,
-            tone: scarcity !== null && scarcity > 8 ? "positive" : "neutral",
-          },
-          {
-            label: "Your roster need",
-            value: exactNeed?.missing
-              ? `${exactNeed.missing} ${player.position} starter slot${exactNeed.missing === 1 ? "" : "s"} open`
-              : `${player.position} depth`,
-            tone: exactNeed?.missing ? "positive" : "neutral",
-          },
-          {
-            label: "ADP value",
-            value: adp.value,
-            tone: adp.tone,
-          },
-          {
-            label: "Injury / risk",
-            value:
-              risk === "Low"
-                ? "Low — no active concern"
-                : `${risk} — ${player.injuryStatus || player.injuryDetail || "monitor status"}`,
-            tone: risk === "High" ? "warning" : "neutral",
-          },
-          {
-            label: "Bye-week conflict",
-            value: bye,
-            tone: byeConflicts ? "warning" : "neutral",
-          },
-        ],
+        reasons: factors,
+        factors,
+        outcomeRange: {
+          floor: range.floor,
+          expected: range.expected,
+          ceiling: range.ceiling,
+        },
+        modelConfidence:
+          player.projectedPoints === null || player.scoringConfidence === "low"
+            ? "Low"
+            : player.scoringConfidence === "medium" ||
+                player.expertBest === null ||
+                player.expertWorst === null ||
+                risk === "High"
+              ? "Medium"
+              : "High",
       };
     })
     .sort(

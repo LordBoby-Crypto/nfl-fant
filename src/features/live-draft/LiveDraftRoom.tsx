@@ -230,15 +230,34 @@ function RecommendationCard({
           <span>
             <strong>{player.name}</strong>
             <small>
-              {player.team} · ECR {formatNumber(player.ecr)} · ADP{" "}
-              {formatNumber(player.adp, 1)}
+              {player.team} · League #{formatNumber(player.leagueRank ?? player.ecr)}
+              {" "}· {player.position} #{formatNumber(player.leaguePositionRank ?? null)}
+              {" "}· ADP {formatNumber(player.adp, 1)}
             </small>
           </span>
           <span className="recommendation-score">
             <strong>{recommendation.score}</strong>
-            <small>fit score</small>
+            <small>personalized</small>
           </span>
         </header>
+        <div className="recommendation-outcome" aria-label="Projected outcome range">
+          <span>
+            <small>Floor</small>
+            <strong>{formatNumber(recommendation.outcomeRange?.floor ?? null, 1)}</strong>
+          </span>
+          <span>
+            <small>Expected</small>
+            <strong>{formatNumber(recommendation.outcomeRange?.expected ?? null, 1)}</strong>
+          </span>
+          <span>
+            <small>Ceiling</small>
+            <strong>{formatNumber(recommendation.outcomeRange?.ceiling ?? null, 1)}</strong>
+          </span>
+          <span>
+            <small>Model confidence</small>
+            <strong>{recommendation.modelConfidence ?? "—"}</strong>
+          </span>
+        </div>
         {guidance ? (
           <div className="recommendation-guidance">
             <strong className={`is-${guidance.tone}`}>
@@ -268,7 +287,7 @@ function RecommendationCard({
           onToggle={onToggle}
         />
         <details className="recommendation-reasons">
-          <summary>Why this pick</summary>
+          <summary>Why this pick · {recommendation.reasons.length} live factors</summary>
           <div>
             {recommendation.reasons.map((reason) => (
               <span className={reason.tone} key={reason.label}>
@@ -702,7 +721,7 @@ function FocusedRecommendation({
         </strong>
         <small>
           {guidance?.survivalProbability === null || guidance?.survivalProbability === undefined
-            ? `${recommendation.score} fit score`
+            ? `${recommendation.score} personalized score`
             : `${guidance.survivalProbability}% survives`}
         </small>
       </span>
@@ -1039,9 +1058,11 @@ export function LiveDraftRoom({
             userRosterId: userRoster.roster_id,
             cursor,
             controls,
+            draft,
+            slotMap,
           })
         : [],
-    [available, board, controls, cursor, teams, userRoster],
+    [available, board, controls, cursor, draft, slotMap, teams, userRoster],
   );
   const positionRun = useMemo(() => detectPositionRun(picks), [picks]);
   const focusedModeActive = draft.status === "drafting" && !simulationActive;

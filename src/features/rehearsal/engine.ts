@@ -105,6 +105,8 @@ export function runFullDraftRehearsal({
           userRosterId,
           cursor,
           controls,
+          draft,
+          slotMap,
         })
       : [];
     const selected = cursor.isUserTurn
@@ -170,6 +172,8 @@ export function runFullDraftRehearsal({
         userRosterId,
         cursor: nextCursor,
         controls,
+        draft,
+        slotMap,
       });
       recalculationTimes.push(performance.now() - startedAt);
       const draftedRecommendation = nextRecommendations.find(

@@ -714,6 +714,7 @@ export function PlayerIntelligencePage({
             userRosterId: userRoster.roster_id,
             cursor,
             controls,
+            draft: snapshot.draft,
             limit: draftState.available.length,
           })
         : [],
@@ -722,6 +723,7 @@ export function PlayerIntelligencePage({
       controls,
       cursor,
       draftState.available,
+      snapshot.draft,
       teams,
       userRoster,
     ],
