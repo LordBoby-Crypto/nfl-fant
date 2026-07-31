@@ -5174,6 +5174,39 @@ button:focus-visible {
   text-transform: uppercase;
 }
 
+.recommendation-outcome {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 9px;
+  overflow: hidden;
+  background: #263a50;
+  border: 1px solid #263a50;
+  border-radius: 4px;
+}
+
+.recommendation-outcome > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: #061321;
+}
+
+.recommendation-outcome small {
+  color: #73869a;
+  font-size: 7px;
+  text-transform: uppercase;
+}
+
+.recommendation-outcome strong {
+  overflow: hidden;
+  color: #d7e4f0;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .recommendation-card.recommendation-changed {
   animation: recommendation-change 1.1s ease-out;
 }
@@ -8500,6 +8533,23 @@ button:focus-visible {
 
   .recommendation-score small {
     font-size: 6px;
+  }
+
+  .recommendation-outcome {
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+    margin-top: 4px;
+  }
+
+  .recommendation-outcome > span {
+    padding: 4px;
+  }
+
+  .recommendation-outcome small {
+    font-size: 5px;
+  }
+
+  .recommendation-outcome strong {
+    font-size: 7px;
   }
 
   .recommendation-guidance {
