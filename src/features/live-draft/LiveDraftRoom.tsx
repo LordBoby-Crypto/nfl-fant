@@ -18,7 +18,9 @@ import {
   ChevronUp,
   CircleAlert,
   Crosshair,
+  Database,
   Grid3X3,
+  Info,
   ListPlus,
   LockKeyhole,
   MoonStar,
@@ -56,6 +58,10 @@ import {
   type DraftRecommendation,
   type TeamDraftState,
 } from "./engine";
+import {
+  buildRecommendationProofs,
+  type RecommendationProof,
+} from "./recommendationProof";
 import { DraftStrategyLab } from "./DraftStrategyLab";
 import {
   forecastNextTurnMarket,
@@ -194,6 +200,7 @@ function DraftUnlock({
 
 function RecommendationCard({
   recommendation,
+  proof,
   rank,
   guidance,
   tierBreak,
@@ -204,6 +211,7 @@ function RecommendationCard({
   onToggle,
 }: {
   recommendation: DraftRecommendation;
+  proof: RecommendationProof | null;
   rank: number;
   guidance: PlayerWaitGuidance | null;
   tierBreak: TierBreakWarning | null;
@@ -214,6 +222,7 @@ function RecommendationCard({
   onToggle: (kind: DraftControlKind, playerId: string) => void;
 }) {
   const { player } = recommendation;
+  const [proofOpen, setProofOpen] = useState(rank === 1);
   const changeLabel =
     change?.kind === "new"
       ? "New after last pick"
@@ -248,7 +257,7 @@ function RecommendationCard({
           </span>
           <span className="recommendation-score">
             <strong>{recommendation.score}</strong>
-            <small>personalized</small>
+            <small>roster value</small>
           </span>
         </header>
         <div className="recommendation-outcome" aria-label="Projected outcome range">
@@ -265,8 +274,10 @@ function RecommendationCard({
             <strong>{formatNumber(recommendation.outcomeRange?.ceiling ?? null, 1)}</strong>
           </span>
           <span>
-            <small>Model confidence</small>
-            <strong>{recommendation.modelConfidence ?? "—"}</strong>
+            <small>Recommendation confidence</small>
+            <strong className={`confidence-${(proof?.confidence ?? recommendation.modelConfidence ?? "Low").toLowerCase()}`}>
+              {proof?.confidence ?? recommendation.modelConfidence ?? "Low"}
+            </strong>
           </span>
         </div>
         {guidance ? (
@@ -297,17 +308,177 @@ function RecommendationCard({
           playerId={player.id}
           onToggle={onToggle}
         />
-        <details className="recommendation-reasons">
-          <summary>Why this pick · {recommendation.reasons.length} live factors</summary>
-          <div>
-            {recommendation.reasons.map((reason) => (
-              <span className={reason.tone} key={reason.label}>
-                <small>{reason.label}</small>
-                <strong>{reason.value}</strong>
-              </span>
-            ))}
-          </div>
-        </details>
+        {proof ? (
+          <details
+            className="recommendation-proof"
+            open={proofOpen}
+            onToggle={(event) => setProofOpen(event.currentTarget.open)}
+          >
+            <summary>
+              Recommendation proof · complete {recommendation.reasons.length}-factor audit
+            </summary>
+            <div className="recommendation-proof-body">
+              <section className="proof-score-ledger" aria-label="Complete score calculation">
+                <span>
+                  <small>Starting baseline</small>
+                  <strong>{proof.baseline.toFixed(1)}</strong>
+                </span>
+                <b>+</b>
+                <span className="is-positive">
+                  <small>Positive effects</small>
+                  <strong>+{proof.positiveTotal.toFixed(1)}</strong>
+                </span>
+                <b>−</b>
+                <span className="is-negative">
+                  <small>Negative effects</small>
+                  <strong>−{proof.negativeTotal.toFixed(1)}</strong>
+                </span>
+                <b>=</b>
+                <span className="is-total">
+                  <small>Exact → ranked</small>
+                  <strong>{proof.exactTotal.toFixed(1)} → {proof.roundedTotal}</strong>
+                </span>
+              </section>
+
+              <section className="proof-ranking-explanation">
+                <Info />
+                <span>
+                  <strong>{proof.rankingExplanation}</strong>
+                  <small>{proof.overallVsRosterExplanation}</small>
+                </span>
+              </section>
+
+              <section className="proof-value-split" aria-label="Overall and roster-specific value">
+                <span>
+                  <small>Overall player value</small>
+                  <strong>{proof.overallValue.toFixed(1)}</strong>
+                  <em>Player quality before your roster and live-draft context.</em>
+                </span>
+                <span>
+                  <small>Roster-specific effect</small>
+                  <strong>{proof.rosterSpecificEffect >= 0 ? "+" : ""}{proof.rosterSpecificEffect.toFixed(1)}</strong>
+                  <em>Your needs, depth, concentrations, stacks, market and controls.</em>
+                </span>
+                <span>
+                  <small>Final roster value</small>
+                  <strong>{proof.roundedTotal}</strong>
+                  <em>The value used to order these recommendations.</em>
+                </span>
+              </section>
+
+              <section className="proof-at-a-glance">
+                {[
+                  ["Roster need", proof.rosterNeed],
+                  ["Tier scarcity", proof.tierScarcity],
+                  ["ADP", proof.adp],
+                  ["Injury / role", proof.injury],
+                  ["Bye week", proof.byeWeek],
+                  ["Wait probability", proof.waitProbability],
+                ].map(([label, value]) => (
+                  <span key={label}>
+                    <small>{label}</small>
+                    <strong>{value}</strong>
+                  </span>
+                ))}
+              </section>
+              <p className="proof-wait-explanation">{proof.waitExplanation}</p>
+
+              <div className="proof-effect-columns">
+                <section className="proof-effect-group is-positive">
+                  <header>
+                    <strong>Positive effects</strong>
+                    <small>+{proof.positiveTotal.toFixed(1)} total</small>
+                  </header>
+                  {proof.positiveFactors.map((factor) => (
+                    <span key={factor.key}>
+                      <b>+{factor.score.toFixed(1)}</b>
+                      <span><strong>{factor.label}</strong><small>{factor.value}</small></span>
+                    </span>
+                  ))}
+                  {!proof.positiveFactors.length ? <p>No positive effects.</p> : null}
+                </section>
+                <section className="proof-effect-group is-negative">
+                  <header>
+                    <strong>Negative effects</strong>
+                    <small>−{proof.negativeTotal.toFixed(1)} total</small>
+                  </header>
+                  {proof.negativeFactors.map((factor) => (
+                    <span key={factor.key}>
+                      <b>{factor.score.toFixed(1)}</b>
+                      <span><strong>{factor.label}</strong><small>{factor.value}</small></span>
+                    </span>
+                  ))}
+                  {!proof.negativeFactors.length ? <p>No negative effects.</p> : null}
+                </section>
+              </div>
+
+              <section className="proof-neutral-factors">
+                <header>
+                  <strong>No-score effects</strong>
+                  <small>Modeled and shown for completeness</small>
+                </header>
+                <div>
+                  {proof.neutralFactors.map((factor) => (
+                    <span key={factor.key}>
+                      <b>0.0</b>
+                      <span><strong>{factor.label}</strong><small>{factor.value}</small></span>
+                    </span>
+                  ))}
+                  {!proof.neutralFactors.length ? <p>Every factor changed the score.</p> : null}
+                </div>
+              </section>
+
+              <section className={`proof-confidence is-${proof.confidence.toLowerCase()}`}>
+                <ShieldAlert />
+                <span>
+                  <strong>{proof.confidence} recommendation confidence</strong>
+                  {proof.confidenceReasons.map((reason) => <small key={reason}>{reason}</small>)}
+                </span>
+              </section>
+
+              {proof.warnings.length ? (
+                <section className="proof-warnings">
+                  <header><CircleAlert /><strong>Data and modeling warnings</strong></header>
+                  {proof.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+                </section>
+              ) : null}
+
+              <section className="proof-sources">
+                <header><Database /><strong>Sources and freshness</strong></header>
+                <div>
+                  {proof.sources.map((source) => (
+                    <span key={source.name}>
+                      <b className={`is-${source.status.toLowerCase()}`}>{source.status}</b>
+                      <span>
+                        <strong>{source.name}</strong>
+                        <small>{source.usedFor} · {source.ageLabel}</small>
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </section>
+
+              <section className="proof-alternatives">
+                <header>
+                  <strong>Top alternatives and tradeoffs</strong>
+                  <small>Compared with {player.name}</small>
+                </header>
+                {proof.alternatives.map((alternative) => (
+                  <article key={alternative.playerId}>
+                    <span className={`position-mark position-${alternative.position.toLowerCase()}`}>
+                      {alternative.position}
+                    </span>
+                    <span>
+                      <strong>{alternative.name} · roster value {alternative.score}</strong>
+                      <small>{alternative.tradeoff}</small>
+                      <em>Overall {alternative.overallValue.toFixed(1)} · roster effect {alternative.rosterSpecificEffect >= 0 ? "+" : ""}{alternative.rosterSpecificEffect.toFixed(1)}</em>
+                    </span>
+                  </article>
+                ))}
+              </section>
+            </div>
+          </details>
+        ) : null}
       </div>
       {canDraft ? (
         <button
@@ -917,7 +1088,7 @@ function FocusedRecommendation({
         </strong>
         <small>
           {guidance?.survivalProbability === null || guidance?.survivalProbability === undefined
-            ? `${recommendation.score} personalized score`
+            ? recommendation.factors?.find((factor) => factor.key === "roster-fit")?.value ?? "Best fit for your current roster"
             : `${guidance.survivalProbability}% survives`}
         </small>
       </span>
@@ -1338,6 +1509,25 @@ export function LiveDraftRoom({
       tierBreaks,
     ],
   );
+  const recommendationProofs = useMemo(
+    () =>
+      buildRecommendationProofs({
+        recommendations,
+        forecast: nextTurnForecast,
+        board: warRoom.board,
+        leagueFetchedAt: snapshot.fetchedAt,
+        picksFetchedAt: draftPicks.fetchedAt,
+        draftStatus: draft.status,
+      }),
+    [
+      draft.status,
+      draftPicks.fetchedAt,
+      nextTurnForecast,
+      recommendations,
+      snapshot.fetchedAt,
+      warRoom.board,
+    ],
+  );
   const waitGuidance = useMemo(
     () => {
       const forecastById = new Map(
@@ -1727,7 +1917,7 @@ export function LiveDraftRoom({
                 <Target />
                 <span>
                   <h2>Best five for KingBoby</h2>
-                  <p>Recalculates after every Sleeper or simulator pick.</p>
+                  <p>Recalculates after every pick · every ranking has a complete proof.</p>
                 </span>
                 {warRoom.loadingData ? <RefreshCw className="spin" /> : null}
               </header>
@@ -1737,6 +1927,7 @@ export function LiveDraftRoom({
                     <RecommendationCard
                       key={recommendation.player.id}
                       recommendation={recommendation}
+                      proof={recommendationProofs.get(recommendation.player.id) ?? null}
                       rank={index + 1}
                       guidance={
                         waitGuidance.get(recommendation.player.id) ?? null
