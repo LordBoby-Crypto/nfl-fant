@@ -142,23 +142,26 @@ export function tierBreakForPlayer(
   player: PlayerIntelligence,
   available: PlayerIntelligence[],
 ): TierBreakWarning | null {
-  if (player.position === "—" || player.tier === null) return null;
+  const playerTier = player.leagueTier ?? player.tier;
+  if (player.position === "—" || playerTier === null) return null;
   const positionPool = available
     .filter(
       (candidate) =>
-        candidate.position === player.position && candidate.tier !== null,
+        candidate.position === player.position &&
+        (candidate.leagueTier ?? candidate.tier) !== null,
     )
     .sort(
       (left, right) =>
-        (left.tier ?? 999) - (right.tier ?? 999) ||
+        (left.leagueTier ?? left.tier ?? 999) -
+          (right.leagueTier ?? right.tier ?? 999) ||
         (left.leagueRank ?? left.ecr ?? 9999) -
           (right.leagueRank ?? right.ecr ?? 9999),
     );
   const currentTier = positionPool.filter(
-    (candidate) => candidate.tier === player.tier,
+    (candidate) => (candidate.leagueTier ?? candidate.tier) === playerTier,
   );
   const next = positionPool.find(
-    (candidate) => (candidate.tier ?? player.tier!) > player.tier!,
+    (candidate) => (candidate.leagueTier ?? candidate.tier ?? playerTier) > playerTier,
   );
   const playerRank = player.leagueRank ?? player.ecr;
   const nextRank = next?.leagueRank ?? next?.ecr;
@@ -169,9 +172,9 @@ export function tierBreakForPlayer(
   return {
     playerId: player.id,
     position: player.position,
-    tier: player.tier,
+    tier: playerTier,
     remainingInTier: currentTier.length,
-    nextTier: next?.tier ?? null,
+    nextTier: next ? (next.leagueTier ?? next.tier) : null,
     ecrDrop,
     urgent:
       currentTier.length <= 2 &&

@@ -14,6 +14,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   CircleAlert,
   Crosshair,
@@ -56,7 +57,17 @@ import {
   type TeamDraftState,
 } from "./engine";
 import { DraftStrategyLab } from "./DraftStrategyLab";
-import { forecastOpponentPicks, type OpponentForecast } from "./strategy";
+import {
+  forecastNextTurnMarket,
+  type OpponentForecast,
+} from "./strategy";
+import {
+  buildNextTurnForecast,
+  compareNextTurnForecast,
+  describeTier,
+  type NextTurnForecast,
+  type NextTurnForecastChange,
+} from "./nextTurnForecast";
 import {
   buildDraftBoardRows,
   buildQueueDepletionWarning,
@@ -620,6 +631,191 @@ function LiveIntelligencePanel({
   );
 }
 
+function NextTurnForecastPanel({
+  forecast,
+  change,
+}: {
+  forecast: NextTurnForecast;
+  change: NextTurnForecastChange | null;
+}) {
+  const lead = forecast.players[0] ?? null;
+  const likelyRuns = forecast.positionDemand.filter(
+    (position) => position.risk !== "Stable",
+  );
+  return (
+    <section className="next-turn-forecast-panel" aria-label="Next-Turn Forecast">
+      <header>
+        <Bot />
+        <span>
+          <h2>Next-Turn Forecast</h2>
+          <p>
+            {forecast.nextUserPick
+              ? `${forecast.interveningPicks} pick${forecast.interveningPicks === 1 ? "" : "s"} modeled before your pick ${forecast.nextUserPick}`
+              : "Waiting analysis activates when a later user pick is known"}
+          </p>
+        </span>
+        <small>
+          {forecast.simulations
+            ? `${forecast.simulations} draft paths`
+            : "Draft order pending"}
+        </small>
+      </header>
+
+      {change ? (
+        <div className="forecast-change" aria-live="polite">
+          <TrendingUp />
+          <span>
+            <strong>{change.headline}</strong>
+            <small>{change.details.join(" ")}</small>
+          </span>
+        </div>
+      ) : (
+        <div className="forecast-change is-baseline">
+          <Radio />
+          <span>
+            <strong>Current baseline</strong>
+            <small>The next Sleeper pick will show exactly what changed.</small>
+          </span>
+        </div>
+      )}
+
+      {lead ? (
+        <div className="forecast-lead">
+          <span className={`forecast-call is-${lead.tone}`}>
+            {lead.recommendation}
+          </span>
+          <span>
+            <small>Top decision</small>
+            <strong>{lead.player.name}</strong>
+          </span>
+          <span>
+            <small>Survives</small>
+            <strong>
+              {lead.survivalProbability === null
+                ? "—"
+                : `${lead.survivalProbability}%`}
+            </strong>
+          </span>
+          <span>
+            <small>Expected wait cost</small>
+            <strong>{lead.expectedWaitCost.toFixed(1)} pts</strong>
+          </span>
+          <p>{lead.explanation}</p>
+        </div>
+      ) : null}
+
+      <div className="next-turn-layout">
+        <section className="forecast-player-decisions">
+          <header>
+            <h3>Draft now or wait</h3>
+            <small>Compared with realistic fallbacks</small>
+          </header>
+          <div>
+            {forecast.players.length ? (
+              forecast.players.map((playerForecast, index) => (
+                <article key={playerForecast.player.id}>
+                  <strong className="forecast-rank">#{index + 1}</strong>
+                  <span className={`position-mark position-${playerForecast.player.position.toLowerCase()}`}>
+                    {playerForecast.player.position}
+                  </span>
+                  <span className="forecast-decision-player">
+                    <strong>{playerForecast.player.name}</strong>
+                    <small>
+                      {describeTier(playerForecast.player)}
+                      {playerForecast.finalValuablePlayerInTier
+                        ? " · final valuable player"
+                        : ""}
+                    </small>
+                  </span>
+                  <span className={`forecast-decision is-${playerForecast.tone}`}>
+                    <strong>{playerForecast.recommendation}</strong>
+                    <small>
+                      {playerForecast.survivalProbability === null
+                        ? "No later pick"
+                        : `${playerForecast.survivalProbability}% survives · ${playerForecast.expectedWaitCost.toFixed(1)} cost`}
+                    </small>
+                  </span>
+                  <div className="forecast-survival-track" aria-label={`${playerForecast.player.name} survival estimate`}>
+                    <i
+                      style={{
+                        width: `${playerForecast.survivalProbability ?? 0}%`,
+                      }}
+                    />
+                  </div>
+                  <p>{playerForecast.explanation}</p>
+                  <small className="forecast-alternatives">
+                    Alternatives: {playerForecast.alternatives.length
+                      ? playerForecast.alternatives
+                          .map((alternative) =>
+                            `${alternative.player.name} (${alternative.scoreDelta >= 0 ? "+" : ""}${alternative.scoreDelta})`,
+                          )
+                          .join(" · ")
+                      : "no lower-ranked fallback in the recommendation set"}
+                  </small>
+                </article>
+              ))
+            ) : (
+              <p className="draft-panel-empty">No eligible players remain to forecast.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="forecast-market">
+          <header>
+            <h3>Likely selections before your pick</h3>
+            <small>Team needs + modeled outcomes</small>
+          </header>
+          <div className="forecast-market-picks">
+            {forecast.likelyPicks.length ? (
+              forecast.likelyPicks.map((pick) => {
+                const player = pick.players[0];
+                const position = pick.positions[0];
+                return (
+                  <article key={pick.pickNumber}>
+                    <b>#{pick.pickNumber}</b>
+                    <span>
+                      <strong>{pick.teamName}</strong>
+                      <small>
+                        Needs {pick.needs.join(" · ") || "best value"}
+                      </small>
+                    </span>
+                    <ChevronRight />
+                    <span>
+                      <strong>{player?.player.name ?? position?.position ?? "Open"}</strong>
+                      <small>
+                        {position
+                          ? `${Math.round(position.probability * 100)}% ${position.position}`
+                          : "No reliable position signal"}
+                        {player ? ` · ${Math.round(player.probability * 100)}% player` : ""}
+                      </small>
+                    </span>
+                  </article>
+                );
+              })
+            ) : (
+              <p>No opponent selection occurs before the next known user pick.</p>
+            )}
+          </div>
+          <div className="forecast-run-risk">
+            <h4>Position-run risk</h4>
+            {likelyRuns.length ? (
+              likelyRuns.map((position) => (
+                <span key={position.position} className={`is-${position.risk.replace(" ", "-").toLowerCase()}`}>
+                  <b>{position.position}</b>
+                  <strong>{position.risk}</strong>
+                  <small>{position.expectedSelections.toFixed(1)} expected selections</small>
+                </span>
+              ))
+            ) : (
+              <p>No position is currently projected to run before your next pick.</p>
+            )}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function QueuePanel({
   available,
   controls,
@@ -1096,10 +1292,73 @@ export function LiveDraftRoom({
       ),
     [available, recommendations],
   );
-  const waitGuidance = useMemo(
+  const marketForecast = useMemo(() => {
+    if (
+      !userRoster ||
+      !board.length ||
+      nextDecisionPick === null ||
+      nextDecisionPick <= cursor.currentPick
+    ) {
+      return null;
+    }
+    return forecastNextTurnMarket({
+      draft,
+      users: snapshot.users,
+      rosters: snapshot.rosters,
+      picks,
+      board,
+      userRosterId: userRoster.roster_id,
+      slotMap,
+    });
+  }, [
+    board,
+    cursor.currentPick,
+    draft,
+    nextDecisionPick,
+    picks,
+    slotMap,
+    snapshot.rosters,
+    snapshot.users,
+    userRoster,
+  ]);
+  const nextTurnForecast = useMemo(
     () =>
-      new Map(
+      buildNextTurnForecast({
+        generatedForPick: cursor.currentPick,
+        nextUserPick: nextDecisionPick,
+        recommendations,
+        tierBreaks,
+        market: marketForecast,
+      }),
+    [
+      cursor.currentPick,
+      marketForecast,
+      nextDecisionPick,
+      recommendations,
+      tierBreaks,
+    ],
+  );
+  const waitGuidance = useMemo(
+    () => {
+      const forecastById = new Map(
+        nextTurnForecast.players.map((forecast) => [forecast.player.id, forecast]),
+      );
+      return new Map(
         recommendations.map((recommendation) => {
+          const forecast = forecastById.get(recommendation.player.id);
+          if (forecast) {
+            return [
+              recommendation.player.id,
+              {
+                playerId: recommendation.player.id,
+                nextDecisionPick,
+                survivalProbability: forecast.survivalProbability,
+                guidance: forecast.recommendation,
+                tone: forecast.tone,
+                reason: forecast.explanation,
+              } satisfies PlayerWaitGuidance,
+            ] as const;
+          }
           const tierBreak = tierBreaks.get(recommendation.player.id) ?? null;
           return [
             recommendation.player.id,
@@ -1109,10 +1368,11 @@ export function LiveDraftRoom({
               tierBreak,
               positionRun,
             }),
-          ];
+          ] as const;
         }),
-      ),
-    [nextDecisionPick, positionRun, recommendations, tierBreaks],
+      );
+    },
+    [nextDecisionPick, nextTurnForecast, positionRun, recommendations, tierBreaks],
   );
   const draftedControlled = useMemo(
     () => detectDraftedControlledPlayers(controls, board, picks),
@@ -1128,49 +1388,42 @@ export function LiveDraftRoom({
       ),
     [available, controls, cursor.picksUntilUser, draftedControlled],
   );
-  const expectedPicks = useMemo(() => {
-    if (
-      !userRoster ||
-      !board.length ||
-      nextDecisionPick === null ||
-      nextDecisionPick <= cursor.currentPick
-    ) {
-      return [];
-    }
-    return forecastOpponentPicks({
-      draft,
-      users: snapshot.users,
-      rosters: snapshot.rosters,
-      picks,
-      board,
-      userRosterId: userRoster.roster_id,
-      slotMap,
-      assumedUserPick: cursor.isUserTurn
-        ? recommendations[0]?.player
-        : undefined,
-      limit: Math.min(
-        draft.settings.teams,
-        Math.max(0, nextDecisionPick - cursor.currentPick),
-      ),
-    });
-  }, [
-    board,
-    cursor.currentPick,
-    cursor.isUserTurn,
-    draft,
-    nextDecisionPick,
-    picks,
-    recommendations,
-    slotMap,
-    snapshot.rosters,
-    snapshot.users,
-    userRoster,
-  ]);
+  const expectedPicks = useMemo(
+    () =>
+      nextTurnForecast.likelyPicks.flatMap((forecast): OpponentForecast[] => {
+        const first = forecast.players[0];
+        if (!first) return [];
+        const leadingPosition = forecast.positions[0];
+        return [{
+          pickNumber: forecast.pickNumber,
+          round: forecast.round,
+          rosterId: forecast.rosterId,
+          teamName: forecast.teamName,
+          style: forecast.archetype,
+          player: first.player,
+          alternatives: forecast.players.slice(1).map((candidate) => candidate.player),
+          confidence:
+            first.probability >= 0.55
+              ? "High"
+              : first.probability >= 0.32
+                ? "Medium"
+                : "Low",
+          reason: leadingPosition
+            ? `${leadingPosition.position} is ${Math.round(leadingPosition.probability * 100)}% of modeled outcomes`
+            : "Best fit for roster need and market value",
+        }];
+      }),
+    [nextTurnForecast.likelyPicks],
+  );
   const [recommendationChanges, setRecommendationChanges] = useState(
     () => new Map<string, RecommendationChange>(),
   );
+  const [nextTurnChange, setNextTurnChange] =
+    useState<NextTurnForecastChange | null>(null);
   const previousRecommendations = useRef<DraftRecommendation[]>([]);
   const previousPickSignature = useRef("");
+  const previousNextTurnForecast = useRef<NextTurnForecast | null>(null);
+  const previousForecastPickSignature = useRef("");
   const pickSignature = useMemo(
     () => picks.map((pick) => `${pick.pick_no}:${pick.player_id}`).join("|"),
     [picks],
@@ -1199,6 +1452,24 @@ export function LiveDraftRoom({
       previousRecommendations.current = recommendations;
     }
   }, [pickSignature, recommendations]);
+  useEffect(() => {
+    if (!nextTurnForecast.players.length) return;
+    if (!previousNextTurnForecast.current) {
+      previousNextTurnForecast.current = nextTurnForecast;
+      previousForecastPickSignature.current = pickSignature;
+      return;
+    }
+    if (pickSignature !== previousForecastPickSignature.current) {
+      setNextTurnChange(
+        compareNextTurnForecast(
+          previousNextTurnForecast.current,
+          nextTurnForecast,
+        ),
+      );
+      previousNextTurnForecast.current = nextTurnForecast;
+      previousForecastPickSignature.current = pickSignature;
+    }
+  }, [nextTurnForecast, pickSignature]);
   const visibleAvailable = useMemo(() => {
     const search = deferredQuery.trim().toLocaleLowerCase();
     return available
@@ -1414,6 +1685,10 @@ export function LiveDraftRoom({
 
       {warRoom.isUnlocked ? (
         <>
+          <NextTurnForecastPanel
+            forecast={nextTurnForecast}
+            change={nextTurnChange}
+          />
           <LiveIntelligencePanel
             run={positionRun}
             tierBreak={
