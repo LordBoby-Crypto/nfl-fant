@@ -570,14 +570,6 @@ function scarcityValue(
   return null;
 }
 
-function rosterRequirement(
-  team: TeamDraftState,
-  position: DraftPosition,
-) {
-  const need = team.needs.find((item) => item.position === position);
-  return team.counts[position] + (need?.missing ?? 0);
-}
-
 function needWeight(
   player: PlayerIntelligence,
   userTeam: TeamDraftState,
@@ -673,12 +665,16 @@ function starterAndFlexFit(
 function benchBalance(
   player: PlayerIntelligence,
   team: TeamDraftState,
+  draft?: Draft,
 ) {
   if (player.position === "—") {
     return { score: -30, detail: "Unknown position cannot fill a roster slot" };
   }
   const position = player.position;
-  const directRequirement = rosterRequirement(team, position);
+  const directRequirement = draft
+    ? rosterRequirements(draft)[position]
+    : team.counts[position] +
+      (team.needs.find((item) => item.position === position)?.missing ?? 0);
   const count = team.counts[position];
   const flexCapacity =
     flexEligible(player.position)
@@ -1065,7 +1061,7 @@ export function recommendPlayers({
       const agreement = expertAgreement(player);
       const offenseRole = offenseAndRoleContext(player, allPlayers);
       const rosterFit = starterAndFlexFit(player, userTeam, cursor.currentRound);
-      const balance = benchBalance(player, userTeam);
+      const balance = benchBalance(player, userTeam, draft);
       const concentration = rosterConcentrations(
         player,
         rosterPlayers,
