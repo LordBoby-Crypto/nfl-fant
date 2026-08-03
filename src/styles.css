@@ -5510,6 +5510,21 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.recommendation-outcome strong.confidence-high,
+.proof-confidence.is-high > span > strong {
+  color: #bdf7cb;
+}
+
+.recommendation-outcome strong.confidence-medium,
+.proof-confidence.is-medium > span > strong {
+  color: #f4c66b;
+}
+
+.recommendation-outcome strong.confidence-low,
+.proof-confidence.is-low > span > strong {
+  color: #ff9b9b;
+}
+
 .recommendation-card.recommendation-changed {
   animation: recommendation-change 1.1s ease-out;
 }
@@ -5648,6 +5663,325 @@ button:focus-visible {
 
 .recommendation-reasons .warning strong {
   color: #ffd09a;
+}
+
+.recommendation-proof {
+  margin-top: 10px;
+}
+
+.recommendation-proof > summary {
+  width: fit-content;
+  color: #c9d7e5;
+  font-size: 10px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.recommendation-proof[open] > summary {
+  color: var(--accent);
+}
+
+.recommendation-proof-body {
+  display: grid;
+  gap: 9px;
+  margin-top: 9px;
+}
+
+.proof-score-ledger {
+  display: grid;
+  grid-template-columns: minmax(74px, 1fr) auto minmax(74px, 1fr) auto minmax(74px, 1fr) auto minmax(92px, 1.15fr);
+  align-items: center;
+  gap: 6px;
+  padding: 9px;
+  background: #04101c;
+  border: 1px solid #344a60;
+  border-radius: 5px;
+}
+
+.proof-score-ledger > span {
+  display: grid;
+  gap: 3px;
+}
+
+.proof-score-ledger > span small,
+.proof-value-split small,
+.proof-at-a-glance small {
+  color: #7e91a5;
+  font-size: 7px;
+  text-transform: uppercase;
+}
+
+.proof-score-ledger > span strong {
+  color: #dce7f2;
+  font-size: 12px;
+}
+
+.proof-score-ledger > b {
+  color: #6f8398;
+  font-size: 12px;
+}
+
+.proof-score-ledger .is-positive strong,
+.proof-effect-group.is-positive > header small,
+.proof-effect-group.is-positive > span > b {
+  color: #8ee8ab;
+}
+
+.proof-score-ledger .is-negative strong,
+.proof-effect-group.is-negative > header small,
+.proof-effect-group.is-negative > span > b {
+  color: #ff9b9b;
+}
+
+.proof-score-ledger .is-total strong {
+  color: var(--accent);
+}
+
+.proof-ranking-explanation,
+.proof-confidence {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px;
+  background: #0a1a2a;
+  border: 1px solid #2f465e;
+  border-radius: 5px;
+}
+
+.proof-ranking-explanation > svg,
+.proof-confidence > svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: #58d9ff;
+}
+
+.proof-ranking-explanation > span,
+.proof-confidence > span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.proof-ranking-explanation strong,
+.proof-confidence strong {
+  color: #dce6f1;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.proof-ranking-explanation small,
+.proof-confidence small {
+  color: #91a5b9;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.proof-value-split,
+.proof-at-a-glance {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: #2a4057;
+  border: 1px solid #2a4057;
+  border-radius: 5px;
+}
+
+.proof-value-split > span,
+.proof-at-a-glance > span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 8px;
+  background: #071421;
+}
+
+.proof-value-split strong,
+.proof-at-a-glance strong {
+  color: #d7e4ef;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.proof-value-split em {
+  color: #74879a;
+  font-size: 7px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.proof-wait-explanation {
+  margin: -2px 0 0;
+  color: #94a7ba;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.proof-effect-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.proof-effect-group,
+.proof-neutral-factors,
+.proof-warnings,
+.proof-sources,
+.proof-alternatives {
+  overflow: hidden;
+  background: #061321;
+  border: 1px solid #2a4057;
+  border-radius: 5px;
+}
+
+.proof-effect-group > header,
+.proof-neutral-factors > header,
+.proof-warnings > header,
+.proof-sources > header,
+.proof-alternatives > header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  background: #0b1c2d;
+  border-bottom: 1px solid #2a4057;
+}
+
+.proof-effect-group > header strong,
+.proof-neutral-factors > header strong,
+.proof-warnings > header strong,
+.proof-sources > header strong,
+.proof-alternatives > header strong {
+  color: #d6e2ed;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.proof-effect-group > header small,
+.proof-neutral-factors > header small,
+.proof-alternatives > header small {
+  margin-left: auto;
+  color: #8295a8;
+  font-size: 7px;
+}
+
+.proof-effect-group > span,
+.proof-neutral-factors > div > span,
+.proof-sources > div > span {
+  display: grid;
+  grid-template-columns: 37px minmax(0, 1fr);
+  gap: 7px;
+  padding: 7px 8px;
+  border-top: 1px solid rgba(52, 73, 95, 0.55);
+}
+
+.proof-effect-group > header + span,
+.proof-neutral-factors > header + div > span:first-child,
+.proof-sources > header + div > span:first-child {
+  border-top: 0;
+}
+
+.proof-effect-group > span > b,
+.proof-neutral-factors > div > span > b,
+.proof-sources > div > span > b {
+  font-size: 8px;
+}
+
+.proof-effect-group > span > span,
+.proof-neutral-factors > div > span > span,
+.proof-sources > div > span > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.proof-effect-group > span strong,
+.proof-neutral-factors > div strong,
+.proof-sources > div strong,
+.proof-alternatives article strong {
+  color: #d0dce7;
+  font-size: 8px;
+}
+
+.proof-effect-group > span small,
+.proof-neutral-factors > div small,
+.proof-sources > div small,
+.proof-alternatives article small,
+.proof-alternatives article em {
+  color: #8295a8;
+  font-size: 7px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.proof-effect-group > p,
+.proof-neutral-factors p {
+  margin: 0;
+  padding: 8px;
+  color: #8295a8;
+  font-size: 8px;
+}
+
+.proof-confidence.is-medium {
+  border-color: rgba(244, 198, 107, 0.5);
+}
+
+.proof-confidence.is-low {
+  border-color: rgba(255, 109, 109, 0.55);
+}
+
+.proof-warnings > header svg,
+.proof-sources > header svg {
+  width: 14px;
+  height: 14px;
+  color: #f4c66b;
+}
+
+.proof-warnings p {
+  margin: 0;
+  padding: 7px 8px;
+  color: #ffd09a;
+  font-size: 8px;
+  line-height: 1.45;
+  border-top: 1px solid rgba(83, 66, 45, 0.55);
+}
+
+.proof-sources > div > span > b {
+  align-self: start;
+  padding: 2px 4px;
+  color: #071421;
+  background: #9ab0c5;
+  border-radius: 3px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.proof-sources > div > span > b.is-fresh {
+  background: #8ee8ab;
+}
+
+.proof-sources > div > span > b.is-partial,
+.proof-sources > div > span > b.is-stale {
+  background: #f4c66b;
+}
+
+.proof-sources > div > span > b.is-missing {
+  background: #ff9b9b;
+}
+
+.proof-alternatives article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid rgba(52, 73, 95, 0.55);
+}
+
+.proof-alternatives article > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
 }
 
 .simulate-draft-button {
@@ -8327,6 +8661,14 @@ button:focus-visible {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .proof-score-ledger {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .proof-score-ledger > b {
+    display: none;
+  }
+
   .team-roster-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -8987,6 +9329,36 @@ button:focus-visible {
     position: relative;
     z-index: 2;
     grid-template-columns: 1fr;
+  }
+
+  .recommendation-proof {
+    margin-top: 4px;
+  }
+
+  .recommendation-proof > summary {
+    font-size: 7px;
+  }
+
+  .proof-score-ledger,
+  .proof-value-split,
+  .proof-at-a-glance,
+  .proof-effect-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .proof-score-ledger > b {
+    display: none;
+  }
+
+  .proof-ranking-explanation,
+  .proof-confidence {
+    padding: 7px;
+  }
+
+  .proof-effect-group > span,
+  .proof-neutral-factors > div > span,
+  .proof-sources > div > span {
+    grid-template-columns: 32px minmax(0, 1fr);
   }
 
   .recommendation-reasons > div > span {
