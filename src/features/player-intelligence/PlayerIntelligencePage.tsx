@@ -1,6 +1,7 @@
 import {
   Fragment,
   useDeferredValue,
+  useEffect,
   useMemo,
   useState,
   type FormEvent,
@@ -43,6 +44,12 @@ import {
   type TeamDraftState,
 } from "../live-draft/engine";
 import { useDraftControls } from "../live-draft/useDraftControls";
+import {
+  ComparePlayerButton,
+  WhatIfComparisonPanel,
+} from "../live-draft/WhatIfComparisonPanel";
+import { buildWhatIfComparison } from "../live-draft/whatIfComparison";
+import { forecastNextTurnMarket } from "../live-draft/strategy";
 import {
   buildOffBoardEntries,
   completeDraftRankingState,
@@ -290,6 +297,8 @@ function PlayerRows({
   drafted,
   teams,
   nextPickRanks,
+  comparisonIds,
+  onToggleComparison,
   onSelect,
 }: {
   players: PlayerIntelligence[];
@@ -297,6 +306,8 @@ function PlayerRows({
   drafted: DraftedPlayerLookup;
   teams: TeamDraftState[];
   nextPickRanks: Map<string, number>;
+  comparisonIds: string[];
+  onToggleComparison: (playerId: string) => void;
   onSelect: (playerId: string) => void;
 }) {
   const teamsByRoster = new Map(
@@ -315,6 +326,7 @@ function PlayerRows({
             <th scope="col">League proj.</th>
             <th scope="col">Availability</th>
             <th scope="col">Confidence</th>
+            <th scope="col">What-if</th>
             <th scope="col"><span className="sr-only">Open player</span></th>
           </tr>
         </thead>
@@ -380,11 +392,23 @@ function PlayerRows({
                     {confidenceLabel(player)}
                   </span>
                 </td>
+                <td data-label="What-if">
+                  {pick ? (
+                    <span className="compare-unavailable">Off board</span>
+                  ) : (
+                    <ComparePlayerButton
+                      player={player}
+                      selected={comparisonIds.includes(player.id)}
+                      disabled={comparisonIds.length >= 4}
+                      onToggle={onToggleComparison}
+                    />
+                  )}
+                </td>
                 <td className="row-action"><ChevronRight /></td>
               </tr>
               {selectedId === player.id ? (
                 <tr className="player-formula-row">
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     <PlayerScoringFormula player={player} />
                   </td>
                 </tr>
@@ -677,6 +701,7 @@ export function PlayerIntelligencePage({
   const [availability, setAvailability] =
     useState<DraftRankingAvailability>("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
   const deferredQuery = useDeferredValue(query);
   const { controls } = useDraftControls();
   const boardPlayers = warRoom.board?.players ?? EMPTY_PLAYER_BOARD;
@@ -738,6 +763,88 @@ export function PlayerIntelligencePage({
       ),
     [nextPickRecommendations],
   );
+  const marketForecast = useMemo(
+    () =>
+      comparisonIds.length > 0 && userRoster && cursor.nextUserPick !== null
+        ? forecastNextTurnMarket({
+            draft: snapshot.draft,
+            users: snapshot.users,
+            rosters: snapshot.rosters,
+            picks: draftPicks.picks,
+            board: boardPlayers,
+            userRosterId: userRoster.roster_id,
+            slotMap: snapshot.draft.slot_to_roster_id,
+          })
+        : null,
+    [
+      boardPlayers,
+      comparisonIds.length,
+      cursor.nextUserPick,
+      draftPicks.picks,
+      snapshot.draft,
+      snapshot.rosters,
+      snapshot.users,
+      userRoster,
+    ],
+  );
+  const comparisonPlayers = useMemo(() => {
+    const byId = new Map(draftState.available.map((player) => [player.id, player]));
+    return comparisonIds.flatMap((id) => {
+      const player = byId.get(id);
+      return player ? [player] : [];
+    });
+  }, [comparisonIds, draftState.available]);
+  const comparison = useMemo(
+    () =>
+      userRoster && comparisonPlayers.length >= 2
+        ? buildWhatIfComparison({
+            candidates: comparisonPlayers,
+            available: draftState.available,
+            allPlayers: boardPlayers,
+            currentRecommendations: nextPickRecommendations,
+            market: marketForecast,
+            draft: snapshot.draft,
+            users: snapshot.users,
+            rosters: snapshot.rosters,
+            picks: draftPicks.picks,
+            userRosterId: userRoster.roster_id,
+            cursor,
+            controls,
+            slotMap: snapshot.draft.slot_to_roster_id,
+          })
+        : null,
+    [
+      boardPlayers,
+      comparisonPlayers,
+      controls,
+      cursor,
+      draftPicks.picks,
+      draftState.available,
+      marketForecast,
+      nextPickRecommendations,
+      snapshot.draft,
+      snapshot.rosters,
+      snapshot.users,
+      userRoster,
+    ],
+  );
+  useEffect(() => {
+    const availableIds = new Set(draftState.available.map((player) => player.id));
+    setComparisonIds((current) => {
+      const next = current.filter((id) => availableIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [draftState.available]);
+
+  function toggleComparison(playerId: string) {
+    setComparisonIds((current) =>
+      current.includes(playerId)
+        ? current.filter((id) => id !== playerId)
+        : current.length < 4
+          ? [...current, playerId]
+          : current,
+    );
+  }
   const offBoardEntries = useMemo(
     () =>
       buildOffBoardEntries({
@@ -977,6 +1084,15 @@ export function PlayerIntelligencePage({
             </section>
           ) : null}
 
+          {isDraftRankings ? (
+            <WhatIfComparisonPanel
+              selectedPlayers={comparisonPlayers}
+              comparison={comparison}
+              onRemove={toggleComparison}
+              onClear={() => setComparisonIds([])}
+            />
+          ) : null}
+
           <section className="player-board-controls" aria-label="Player filters">
             <label className="player-search">
               <span className="sr-only">Search players</span>
@@ -1099,6 +1215,8 @@ export function PlayerIntelligencePage({
                   drafted={draftState.drafted}
                   teams={teams}
                   nextPickRanks={nextPickRanks}
+                  comparisonIds={comparisonIds}
+                  onToggleComparison={toggleComparison}
                   onSelect={(playerId) => {
                     setSelectedId((current) =>
                       current === playerId ? null : playerId

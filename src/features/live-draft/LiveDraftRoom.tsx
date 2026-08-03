@@ -92,6 +92,11 @@ import {
 import { useDraftControls } from "./useDraftControls";
 import { useDraftFocusTools } from "./useDraftFocusTools";
 import { useDraftStrategy } from "./useDraftStrategy";
+import {
+  ComparePlayerButton,
+  WhatIfComparisonPanel,
+} from "./WhatIfComparisonPanel";
+import { buildWhatIfComparison } from "./whatIfComparison";
 
 type WarRoomState = ReturnType<typeof useWarRoom>;
 type DraftPickState = ReturnType<typeof useDraftPicks>;
@@ -207,7 +212,9 @@ function RecommendationCard({
   change,
   controls,
   canDraft,
+  comparisonIds,
   onDraft,
+  onToggleComparison,
   onToggle,
 }: {
   recommendation: DraftRecommendation;
@@ -218,7 +225,9 @@ function RecommendationCard({
   change: RecommendationChange | null;
   controls: DraftControlState;
   canDraft: boolean;
+  comparisonIds: string[];
   onDraft: (player: PlayerIntelligence) => void;
+  onToggleComparison: (playerId: string) => void;
   onToggle: (kind: DraftControlKind, playerId: string) => void;
 }) {
   const { player } = recommendation;
@@ -307,6 +316,12 @@ function RecommendationCard({
           controls={controls}
           playerId={player.id}
           onToggle={onToggle}
+        />
+        <ComparePlayerButton
+          player={player}
+          selected={comparisonIds.includes(player.id)}
+          disabled={comparisonIds.length >= 4}
+          onToggle={onToggleComparison}
         />
         {proof ? (
           <details
@@ -497,13 +512,17 @@ function AvailablePlayerRow({
   player,
   controls,
   canDraft,
+  comparisonIds,
   onDraft,
+  onToggleComparison,
   onToggle,
 }: {
   player: PlayerIntelligence;
   controls: DraftControlState;
   canDraft: boolean;
+  comparisonIds: string[];
   onDraft: (player: PlayerIntelligence) => void;
+  onToggleComparison: (playerId: string) => void;
   onToggle: (kind: DraftControlKind, playerId: string) => void;
 }) {
   return (
@@ -523,6 +542,12 @@ function AvailablePlayerRow({
         controls={controls}
         playerId={player.id}
         onToggle={onToggle}
+      />
+      <ComparePlayerButton
+        player={player}
+        selected={comparisonIds.includes(player.id)}
+        disabled={comparisonIds.length >= 4}
+        onToggle={onToggleComparison}
       />
       {canDraft ? (
         <button
@@ -1373,6 +1398,7 @@ export function LiveDraftRoom({
   const [simulationActive, setSimulationActive] = useState(false);
   const [simulatedPicks, setSimulatedPicks] = useState<SleeperDraftPick[]>([]);
   const [query, setQuery] = useState("");
+  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
   const deferredQuery = useDeferredValue(query);
   const { controls, moveQueue, toggle } = useDraftControls();
   const { simulationRuns, setSimulationRuns } = useDraftStrategy();
@@ -1492,6 +1518,83 @@ export function LiveDraftRoom({
     snapshot.users,
     userRoster,
   ]);
+  const comparisonPlayers = useMemo(() => {
+    const byId = new Map(available.map((player) => [player.id, player]));
+    return comparisonIds.flatMap((id) => {
+      const player = byId.get(id);
+      return player ? [player] : [];
+    });
+  }, [available, comparisonIds]);
+  const comparisonRecommendations = useMemo(
+    () =>
+      userRoster && comparisonIds.length
+        ? recommendPlayers({
+            available,
+            allPlayers: board,
+            teams,
+            userRosterId: userRoster.roster_id,
+            cursor,
+            controls,
+            draft,
+            slotMap,
+            limit: available.length,
+          })
+        : recommendations,
+    [
+      available,
+      board,
+      comparisonIds.length,
+      controls,
+      cursor,
+      draft,
+      recommendations,
+      slotMap,
+      teams,
+      userRoster,
+    ],
+  );
+  const whatIfComparison = useMemo(
+    () =>
+      userRoster && comparisonPlayers.length >= 2
+        ? buildWhatIfComparison({
+            candidates: comparisonPlayers,
+            available,
+            allPlayers: board,
+            currentRecommendations: comparisonRecommendations,
+            market: marketForecast,
+            draft,
+            users: snapshot.users,
+            rosters: snapshot.rosters,
+            picks,
+            userRosterId: userRoster.roster_id,
+            cursor,
+            controls,
+            slotMap,
+          })
+        : null,
+    [
+      available,
+      board,
+      comparisonPlayers,
+      comparisonRecommendations,
+      controls,
+      cursor,
+      draft,
+      marketForecast,
+      picks,
+      slotMap,
+      snapshot.rosters,
+      snapshot.users,
+      userRoster,
+    ],
+  );
+  useEffect(() => {
+    const availableIds = new Set(available.map((player) => player.id));
+    setComparisonIds((current) => {
+      const next = current.filter((id) => availableIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [available]);
   const nextTurnForecast = useMemo(
     () =>
       buildNextTurnForecast({
@@ -1712,6 +1815,16 @@ export function LiveDraftRoom({
     setSimulatedPicks([]);
   }
 
+  function toggleComparison(playerId: string) {
+    setComparisonIds((current) =>
+      current.includes(playerId)
+        ? current.filter((id) => id !== playerId)
+        : current.length < 4
+          ? [...current, playerId]
+          : current,
+    );
+  }
+
   return (
     <main className="workspace-page live-draft-page">
       <header className="page-heading draft-room-heading">
@@ -1875,6 +1988,12 @@ export function LiveDraftRoom({
 
       {warRoom.isUnlocked ? (
         <>
+          <WhatIfComparisonPanel
+            selectedPlayers={comparisonPlayers}
+            comparison={whatIfComparison}
+            onRemove={toggleComparison}
+            onClear={() => setComparisonIds([])}
+          />
           <NextTurnForecastPanel
             forecast={nextTurnForecast}
             change={nextTurnChange}
@@ -1941,7 +2060,9 @@ export function LiveDraftRoom({
                       }
                       controls={controls}
                       canDraft={simulationActive && cursor.isUserTurn}
+                      comparisonIds={comparisonIds}
                       onDraft={draftInSimulation}
+                      onToggleComparison={toggleComparison}
                       onToggle={toggle}
                     />
                   ))
@@ -1979,7 +2100,9 @@ export function LiveDraftRoom({
                     player={player}
                     controls={controls}
                     canDraft={simulationActive && cursor.isUserTurn}
+                    comparisonIds={comparisonIds}
                     onDraft={draftInSimulation}
+                    onToggleComparison={toggleComparison}
                     onToggle={toggle}
                   />
                 ))}
