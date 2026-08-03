@@ -12,6 +12,7 @@ import {
   cpuPlayerScore,
   createSimulatedPick,
   getDraftCursor,
+  getDraftSlotForPick,
   getPickNumberForRoundSlot,
   normalizePlayerName,
   pickPlayerName,
@@ -98,8 +99,24 @@ export interface OpponentPickForecast {
   rosterId: number;
   teamName: string;
   archetype: string;
+  needs: string[];
   players: ForecastCandidate[];
   positions: ForecastPosition[];
+}
+
+export interface NextTurnPositionDemand {
+  position: DraftPosition;
+  expectedSelections: number;
+  share: number;
+  risk: "Likely run" | "Watch" | "Stable";
+}
+
+export interface NextTurnMarketForecast {
+  runs: number;
+  interveningPicks: number;
+  picks: OpponentPickForecast[];
+  survivalByPlayer: Map<string, number>;
+  positionDemand: NextTurnPositionDemand[];
 }
 
 export interface SlotPlanRound {
@@ -399,6 +416,11 @@ function forecastOpponentPickProbabilities({
         rosterId,
         teamName: team?.name ?? `Roster ${rosterId}`,
         archetype: profile.name,
+        needs: team?.needs
+          .filter((need) => need.missing > 0)
+          .sort((left, right) => right.missing - left.missing)
+          .slice(0, 3)
+          .map((need) => `${need.position} ${need.missing}`) ?? [],
         players: [...counts.entries()]
           .map(([playerId, count]) => ({
             player: sampleByPlayer.get(playerId)!,
@@ -415,6 +437,176 @@ function forecastOpponentPickProbabilities({
           .slice(0, 3),
       };
     });
+}
+
+export function forecastNextTurnMarket({
+  runs = 240,
+  ...input
+}: {
+  draft: Draft;
+  users: LeagueUser[];
+  rosters: Roster[];
+  picks: SleeperDraftPick[];
+  board: PlayerIntelligence[];
+  userRosterId: number;
+  slotMap: Record<string, number>;
+  runs?: number;
+}): NextTurnMarketForecast {
+  const working = [...input.picks];
+  const initialCursor = getDraftCursor(
+    input.draft,
+    working,
+    input.userRosterId,
+    input.slotMap,
+  );
+  if (initialCursor.isUserTurn && initialCursor.currentRosterId !== null) {
+    const roster = input.rosters.find(
+      (candidate) => candidate.roster_id === input.userRosterId,
+    );
+    working.push({
+      player_id: "__modeled_user_selection__",
+      picked_by: roster?.owner_id ?? "modeled-user",
+      roster_id: input.userRosterId,
+      round: initialCursor.currentRound,
+      draft_slot: initialCursor.currentSlot,
+      pick_no: initialCursor.currentPick,
+      is_keeper: false,
+      metadata: {
+        first_name: "Modeled",
+        last_name: "selection",
+      },
+    });
+  }
+
+  const boardById = new Map(input.board.map((player) => [player.id, player]));
+  const available = availablePlayers(input.board, working);
+  const playerCounts = new Map<number, Map<string, number>>();
+  const positionCounts = new Map<number, Map<DraftPosition, number>>();
+  const selectedRuns = new Map<string, number>();
+  let interveningPicks = 0;
+
+  for (let run = 0; run < runs; run += 1) {
+    const selections = simulateOpponentSelections({
+      ...input,
+      picks: working,
+      seed: 91_711 + run * 7_919 + input.picks.length * 101,
+      horizon: input.draft.settings.teams * 2,
+    });
+    interveningPicks = Math.max(interveningPicks, selections.length);
+    const selectedThisRun = new Set<string>();
+    for (const pick of selections) {
+      const player = boardById.get(pick.player_id);
+      const position = pickPosition(pick);
+      if (!player || !position) continue;
+      selectedThisRun.add(player.id);
+      const atPick = playerCounts.get(pick.pick_no) ?? new Map<string, number>();
+      atPick.set(player.id, (atPick.get(player.id) ?? 0) + 1);
+      playerCounts.set(pick.pick_no, atPick);
+      const positionsAtPick =
+        positionCounts.get(pick.pick_no) ?? new Map<DraftPosition, number>();
+      positionsAtPick.set(
+        position,
+        (positionsAtPick.get(position) ?? 0) + 1,
+      );
+      positionCounts.set(pick.pick_no, positionsAtPick);
+    }
+    for (const playerId of selectedThisRun) {
+      selectedRuns.set(playerId, (selectedRuns.get(playerId) ?? 0) + 1);
+    }
+  }
+
+  const teams = buildTeamDraftStates({
+    draft: input.draft,
+    users: input.users,
+    rosters: input.rosters,
+    picks: working,
+    slotMap: input.slotMap,
+  });
+  const picks = [...playerCounts.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([pickNumber, counts]): OpponentPickForecast => {
+      const round =
+        Math.floor((pickNumber - 1) / input.draft.settings.teams) + 1;
+      const slot = getDraftSlotForPick(
+        pickNumber,
+        input.draft.settings.teams,
+        input.draft.type,
+      );
+      const rosterId = Number(input.slotMap[String(slot)]);
+      const team = teams.find((candidate) => candidate.rosterId === rosterId);
+      const profile = team ? getOpponentProfile(team) : ARCHETYPES[0];
+      const positions = positionCounts.get(pickNumber) ?? new Map();
+      return {
+        pickNumber,
+        round,
+        slot,
+        rosterId,
+        teamName: team?.name ?? `Roster ${rosterId}`,
+        archetype: profile.name,
+        needs: team?.needs
+          .filter((need) => need.missing > 0)
+          .sort((left, right) => right.missing - left.missing)
+          .slice(0, 3)
+          .map((need) => `${need.position} ${need.missing}`) ?? [],
+        players: [...counts.entries()]
+          .flatMap(([playerId, count]): ForecastCandidate[] => {
+            const player = boardById.get(playerId);
+            return player ? [{ player, probability: count / runs }] : [];
+          })
+          .sort((left, right) => right.probability - left.probability)
+          .slice(0, 3),
+        positions: [...positions.entries()]
+          .map(([position, count]) => ({
+            position,
+            probability: count / runs,
+          }))
+          .sort((left, right) => right.probability - left.probability)
+          .slice(0, 3),
+      };
+    });
+
+  const positionTotals = new Map<DraftPosition, number>();
+  for (const positions of positionCounts.values()) {
+    for (const [position, count] of positions) {
+      positionTotals.set(position, (positionTotals.get(position) ?? 0) + count);
+    }
+  }
+  const positionDemand = [...positionTotals.entries()]
+    .map(([position, count]): NextTurnPositionDemand => {
+      const expectedSelections = count / runs;
+      const share = interveningPicks ? expectedSelections / interveningPicks : 0;
+      return {
+        position,
+        expectedSelections,
+        share,
+        risk:
+          expectedSelections >= 3 || (expectedSelections >= 2 && share >= 0.34)
+            ? "Likely run"
+            : expectedSelections >= 1.5 || share >= 0.28
+              ? "Watch"
+              : "Stable",
+      };
+    })
+    .sort((left, right) => right.expectedSelections - left.expectedSelections);
+
+  return {
+    runs,
+    interveningPicks,
+    picks,
+    survivalByPlayer: new Map(
+      available.map((player) => [
+        player.id,
+        Math.max(
+          1,
+          Math.min(
+            99,
+            Math.round((1 - (selectedRuns.get(player.id) ?? 0) / runs) * 100),
+          ),
+        ),
+      ]),
+    ),
+    positionDemand,
+  };
 }
 
 export function forecastOpponentPicks({
