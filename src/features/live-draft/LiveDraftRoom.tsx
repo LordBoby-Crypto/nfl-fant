@@ -97,6 +97,8 @@ import {
   WhatIfComparisonPanel,
 } from "./WhatIfComparisonPanel";
 import { buildWhatIfComparison } from "./whatIfComparison";
+import { SimpleDraftMode } from "./SimpleDraftMode";
+import { buildRosterPlan } from "./rosterPlan";
 
 type WarRoomState = ReturnType<typeof useWarRoom>;
 type DraftPickState = ReturnType<typeof useDraftPicks>;
@@ -1427,6 +1429,21 @@ export function LiveDraftRoom({
       }),
     [draft, picks, slotMap, snapshot.rosters, snapshot.users],
   );
+  const userTeam = useMemo(
+    () => teams.find((team) => team.rosterId === userRoster?.roster_id) ?? null,
+    [teams, userRoster?.roster_id],
+  );
+  const rosterPlan = useMemo(
+    () =>
+      userTeam
+        ? buildRosterPlan({
+            draft,
+            team: userTeam,
+            players: board,
+          })
+        : null,
+    [board, draft, userTeam],
+  );
   const cursor = useMemo(
     () =>
       getDraftCursor(
@@ -1822,6 +1839,37 @@ export function LiveDraftRoom({
         : current.length < 4
           ? [...current, playerId]
           : current,
+    );
+  }
+
+  if (focusedModeActive && rosterPlan) {
+    return (
+      <main className="workspace-page live-draft-page simple-draft-page">
+        {!warRoom.isUnlocked ? <DraftUnlock warRoom={warRoom} /> : null}
+        <SimpleDraftMode
+          draft={draft}
+          cursor={cursor}
+          currentTeamName={currentTeam?.name ?? "Waiting for draft order"}
+          recommendations={recommendations}
+          recommendationProofs={recommendationProofs}
+          forecast={nextTurnForecast}
+          available={available}
+          rosterPlan={rosterPlan}
+          teams={teams}
+          recentPicks={completedPicks}
+          draftPicks={draftPicks}
+          intelligenceError={warRoom.dataError}
+          intelligenceLoading={warRoom.loadingData}
+          usingCachedBoard={warRoom.usingCachedBoard}
+          refreshing={refreshing}
+          tools={focusTools}
+          onRefresh={() => {
+            onRefresh();
+            void draftPicks.refresh();
+            warRoom.refresh();
+          }}
+        />
+      </main>
     );
   }
 
