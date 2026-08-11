@@ -1,6 +1,6 @@
 # Milestone 26 release qualification
 
-Status: **Release candidate — major-feature freeze pending production verification**
+Status: **Accepted — production verified and major-feature freeze active**
 
 Milestone 26 is a qualification and blocker-fix release. It does not add a new
 draft workflow. The release is accepted only when the complete adaptive
@@ -66,3 +66,12 @@ correction interactions.
    freeze from pending to active and records the production evidence.
 
 If any step fails, the freeze remains pending and the release stays open.
+
+## Final production result
+
+Milestone 26 was accepted on `2026-08-11T17:43:41-05:00` after production
+commit `c4571e19ac6e41165fed1ea47404716bae0770e8` passed the complete GitHub
+Pages workflow, deployed bundle verification, Vercel production verification,
+status and protected-route checks, runtime-error scan, and rendered desktop and
+phone QA. The major-feature freeze is active under
+[`DRAFT_DAY_RELEASE_FREEZE.md`](DRAFT_DAY_RELEASE_FREEZE.md).

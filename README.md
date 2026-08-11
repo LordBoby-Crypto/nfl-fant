@@ -274,7 +274,7 @@ multiple slots and live commissioner changes. Every pick must rebuild and
 validate availability, rankings, recommendations and forecasts, while the
 release also repeats outage, session, delayed-pick, correction, reconciliation,
 cross-device and rendered desktop/phone checks. The replacement major-feature
-freeze activates only after the verified production release under
+freeze is active after the verified production release under
 [`docs/MILESTONE_26_RELEASE_QUALIFICATION.md`](docs/MILESTONE_26_RELEASE_QUALIFICATION.md).
 
 The project is configured for GitHub Pages at `/nfl-fant/`.
