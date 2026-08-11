@@ -188,6 +188,25 @@ export interface DraftPickTelemetry extends FeedTelemetry {
   received: number;
   unique: number;
   retained: number;
+  duplicatePickNumbers: number;
+  duplicatePlayers: number;
+  missingPickNumbers: number;
+  reordered: boolean;
+}
+
+export type DraftPickDiagnosticKind =
+  | "duplicate-pick"
+  | "duplicate-player"
+  | "missing-pick"
+  | "reordered-picks"
+  | "regressed-feed";
+
+export interface DraftPickDiagnostic {
+  id: string;
+  kind: DraftPickDiagnosticKind;
+  message: string;
+  pickNumbers: number[];
+  detectedAt: number;
 }
 
 export interface WeeklyOutlook {

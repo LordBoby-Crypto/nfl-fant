@@ -9,6 +9,11 @@ import {
   formatRecoveryCode,
   parseRecoveryCode,
 } from "../src/features/safety/sync.ts";
+import {
+  markPlayerDraftedManually,
+  normalizeLiveReliabilityState,
+} from "../src/features/live-draft/liveReliability.ts";
+import type { PlayerIntelligence } from "../src/features/player-intelligence/model.ts";
 
 const controls: DraftControlState = {
   watchlist: ["p1"],
@@ -40,6 +45,42 @@ test("draft preferences round-trip through AES-GCM without plaintext in cipherte
   assert.equal(envelope.ciphertext.includes("p1"), false);
   const backup = await decryptDraftPreferences(envelope, credentials);
   assert.deepEqual(backup.controls, controls);
+});
+
+test("encrypted device sync carries live corrections without exposing player names", async () => {
+  const live = markPlayerDraftedManually(
+    normalizeLiveReliabilityState(null, "draft-25"),
+    {
+      id: "p1",
+      name: "Private Player",
+      team: "DAL",
+      position: "RB",
+      positionRank: "RB1",
+      ecr: 1,
+      tier: 1,
+      adp: 1,
+      projectedPoints: 300,
+      expertBest: 1,
+      expertWorst: 2,
+      expertAverage: 1,
+      injuryStatus: "",
+      injuryDetail: "",
+      practiceStatus: "",
+      byeWeek: 7,
+      news: [],
+    } satisfies PlayerIntelligence,
+    100,
+  );
+  const credentials = createSyncCredentials();
+  const envelope = await encryptDraftPreferences(
+    controls,
+    credentials,
+    new Date("2026-08-11T12:00:00.000Z"),
+    live,
+  );
+  assert.equal(envelope.ciphertext.includes("Private Player"), false);
+  const backup = await decryptDraftPreferences(envelope, credentials);
+  assert.equal(backup.liveReliability?.corrections[0].playerName, "Private Player");
 });
 
 test("a different recovery key cannot decrypt the encrypted sync vault", async () => {

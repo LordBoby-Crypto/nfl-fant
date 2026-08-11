@@ -4,6 +4,7 @@ import {
   type DraftPreferenceBackup,
 } from "./model.ts";
 import type { DraftControlState } from "../live-draft/engine.ts";
+import type { LiveReliabilityState } from "../live-draft/liveReliability.ts";
 
 export interface SyncCredentials {
   vaultId: string;
@@ -19,6 +20,7 @@ export interface EncryptedSyncEnvelope {
 
 const RECOVERY_PREFIX = "wr1";
 const SESSION_STORAGE_KEY = "war-room.session.v1";
+export const SYNC_CREDENTIALS_KEY = "war-room.secure-sync-credentials.v1";
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
@@ -70,6 +72,23 @@ export function parseRecoveryCode(value: string): SyncCredentials {
   }
 }
 
+export function readSyncCredentials(): SyncCredentials | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(SYNC_CREDENTIALS_KEY) ?? "null") as
+      | Partial<SyncCredentials>
+      | null;
+    return value?.vaultId && value?.key
+      ? parseRecoveryCode(formatRecoveryCode(value as SyncCredentials))
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function storeSyncCredentials(credentials: SyncCredentials) {
+  localStorage.setItem(SYNC_CREDENTIALS_KEY, JSON.stringify(credentials));
+}
+
 async function encryptionKey(key: string) {
   return crypto.subtle.importKey(
     "raw",
@@ -94,8 +113,9 @@ export async function encryptDraftPreferences(
   controls: DraftControlState,
   credentials: SyncCredentials,
   now = new Date(),
+  liveReliability?: LiveReliabilityState | null,
 ): Promise<EncryptedSyncEnvelope> {
-  const backup = createDraftPreferenceBackup(controls, now);
+  const backup = createDraftPreferenceBackup(controls, now, liveReliability);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
@@ -199,8 +219,14 @@ export async function saveSecureSyncVault(
   controls: DraftControlState,
   credentials: SyncCredentials,
   signal?: AbortSignal,
+  liveReliability?: LiveReliabilityState | null,
 ) {
-  const envelope = await encryptDraftPreferences(controls, credentials);
+  const envelope = await encryptDraftPreferences(
+    controls,
+    credentials,
+    new Date(),
+    liveReliability,
+  );
   const secret = await deriveVaultSecret(credentials);
   const rows = await callSyncApi<Array<{ updated_at: string }>>(
     "save",

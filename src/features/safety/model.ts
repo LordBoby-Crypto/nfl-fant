@@ -1,5 +1,9 @@
 import type { PlayerBoardData, PlayerIntelligence } from "../player-intelligence/model";
 import type { DraftControlState } from "../live-draft/engine";
+import {
+  normalizeLiveReliabilityState,
+  type LiveReliabilityState,
+} from "../live-draft/liveReliability.ts";
 
 export const BACKUP_VERSION = 1 as const;
 
@@ -8,6 +12,7 @@ export interface DraftPreferenceBackup {
   version: typeof BACKUP_VERSION;
   exportedAt: string;
   controls: DraftControlState;
+  liveReliability?: LiveReliabilityState;
 }
 
 export interface SessionClock {
@@ -50,12 +55,21 @@ export function normalizeDraftControls(value: unknown): DraftControlState {
 export function createDraftPreferenceBackup(
   controls: DraftControlState,
   now = new Date(),
+  liveReliability?: LiveReliabilityState | null,
 ): DraftPreferenceBackup {
   return {
     product: "NFL Fantasy War Room",
     version: BACKUP_VERSION,
     exportedAt: now.toISOString(),
     controls: normalizeDraftControls(controls),
+    ...(liveReliability
+      ? {
+          liveReliability: normalizeLiveReliabilityState(
+            liveReliability,
+            liveReliability.draftId,
+          ),
+        }
+      : {}),
   };
 }
 
@@ -71,6 +85,14 @@ export function parseDraftPreferenceBackup(value: string) {
   return {
     ...parsed,
     controls: normalizeDraftControls(parsed.controls),
+    ...(parsed.liveReliability?.draftId
+      ? {
+          liveReliability: normalizeLiveReliabilityState(
+            parsed.liveReliability,
+            parsed.liveReliability.draftId,
+          ),
+        }
+      : {}),
   } as DraftPreferenceBackup;
 }
 

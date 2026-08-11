@@ -99,6 +99,9 @@ import {
 import { buildWhatIfComparison } from "./whatIfComparison";
 import { SimpleDraftMode } from "./SimpleDraftMode";
 import { buildRosterPlan } from "./rosterPlan";
+import { LiveReliabilityPanel } from "./LiveReliabilityPanel.tsx";
+import { useLiveReliability } from "./useLiveReliability.ts";
+import { buildPracticeLesson } from "./liveReliability.ts";
 
 type WarRoomState = ReturnType<typeof useWarRoom>;
 type DraftPickState = ReturnType<typeof useDraftPicks>;
@@ -1417,7 +1420,21 @@ export function LiveDraftRoom({
     [actualPosition, draft, simSlot, simulationActive, userRoster],
   );
   const livePicks = draftPicks.picks;
+  const reliability = useLiveReliability({
+    draft,
+    userRosterId: userRoster?.roster_id ?? null,
+    livePicks,
+    board: warRoom.board,
+    picksFetchedAt: draftPicks.fetchedAt,
+    controls,
+    syncActive: warRoom.isUnlocked,
+  });
+  const { recordRecommendations } = reliability;
   const picks = simulationActive ? simulatedPicks : livePicks;
+  const availabilityPicks = useMemo(
+    () => simulationActive ? picks : [...picks, ...reliability.activeManualPicks],
+    [picks, reliability.activeManualPicks, simulationActive],
+  );
   const teams = useMemo(
     () =>
       buildTeamDraftStates({
@@ -1455,8 +1472,8 @@ export function LiveDraftRoom({
     [draft, picks, slotMap, userRoster?.roster_id],
   );
   const available = useMemo(
-    () => availablePlayers(board, picks),
-    [board, picks],
+    () => availablePlayers(board, availabilityPicks),
+    [availabilityPicks, board],
   );
   const recommendations = useMemo(
     () =>
@@ -1648,6 +1665,96 @@ export function LiveDraftRoom({
       warRoom.board,
     ],
   );
+  useEffect(() => {
+    if (simulationActive || !cursor.isUserTurn || !recommendations.length) return;
+    recordRecommendations({
+      pickNumber: cursor.currentPick,
+      round: cursor.currentRound,
+      slot: cursor.currentSlot,
+      recommendations,
+      proofs: recommendationProofs,
+    });
+  }, [
+    cursor.currentPick,
+    cursor.currentRound,
+    cursor.currentSlot,
+    cursor.isUserTurn,
+    recommendationProofs,
+    recommendations,
+    recordRecommendations,
+    simulationActive,
+  ]);
+  const [practicePlayerId, setPracticePlayerId] = useState<string | null>(null);
+  const practiceOptions = useMemo(
+    () => recommendations.slice(0, 3).map((recommendation) => recommendation.player),
+    [recommendations],
+  );
+  const practiceLesson = useMemo(() => {
+    if (!practicePlayerId || cursor.complete || !userRoster) return null;
+    const player = available.find((candidate) => candidate.id === practicePlayerId);
+    if (!player) return null;
+    const practiceRosterId = cursor.currentRosterId ?? userRoster.roster_id;
+    const practiceOwner = snapshot.rosters.find(
+      (roster) => roster.roster_id === practiceRosterId,
+    )?.owner_id ?? "practice-opponent";
+    const practicePick = createSimulatedPick({
+      draft,
+      pickNumber: cursor.currentPick,
+      player,
+      rosterId: practiceRosterId,
+      ownerId: practiceOwner,
+    });
+    const practicePicks = [...picks, practicePick];
+    const practiceTeams = buildTeamDraftStates({
+      draft,
+      users: snapshot.users,
+      rosters: snapshot.rosters,
+      picks: practicePicks,
+      slotMap,
+    });
+    const practiceCursor = getDraftCursor(
+      draft,
+      practicePicks,
+      userRoster.roster_id,
+      slotMap,
+    );
+    const practiceAvailable = availablePlayers(
+      board,
+      [...availabilityPicks, practicePick],
+    );
+    const after = recommendPlayers({
+      available: practiceAvailable,
+      allPlayers: board,
+      teams: practiceTeams,
+      userRosterId: userRoster.roster_id,
+      cursor: practiceCursor,
+      controls,
+      draft,
+      slotMap,
+    });
+    return buildPracticeLesson(
+      recommendations,
+      after,
+      player,
+      cursor.currentPick,
+    );
+  }, [
+    availabilityPicks,
+    available,
+    board,
+    controls,
+    cursor.complete,
+    cursor.currentPick,
+    cursor.currentRosterId,
+    draft,
+    picks,
+    practicePlayerId,
+    recommendations,
+    slotMap,
+    snapshot.rosters,
+    snapshot.users,
+    userRoster,
+  ]);
   const waitGuidance = useMemo(
     () => {
       const forecastById = new Map(
@@ -1685,8 +1792,8 @@ export function LiveDraftRoom({
     [nextDecisionPick, nextTurnForecast, positionRun, recommendations, tierBreaks],
   );
   const draftedControlled = useMemo(
-    () => detectDraftedControlledPlayers(controls, board, picks),
-    [board, controls, picks],
+    () => detectDraftedControlledPlayers(controls, board, availabilityPicks),
+    [availabilityPicks, board, controls],
   );
   const queueWarning = useMemo(
     () =>
@@ -1795,6 +1902,21 @@ export function LiveDraftRoom({
     (team) => team.rosterId === cursor.currentRosterId,
   );
   const completedPicks = picks;
+  const reliabilityPanel = (
+    <LiveReliabilityPanel
+      available={available}
+      state={reliability.state}
+      freshness={reliability.freshness}
+      diagnostics={draftPicks.diagnostics}
+      syncStatus={reliability.syncStatus}
+      syncMessage={reliability.syncMessage}
+      practiceOptions={practiceOptions}
+      practiceLesson={practiceLesson}
+      onMarkDrafted={reliability.markDrafted}
+      onReverseCorrection={reliability.reverseCorrection}
+      onPractice={setPracticePlayerId}
+    />
+  );
 
   function advanceSimulation(basePicks: SleeperDraftPick[]) {
     if (!userRoster || !board.length) return basePicks;
@@ -1863,6 +1985,8 @@ export function LiveDraftRoom({
           usingCachedBoard={warRoom.usingCachedBoard}
           refreshing={refreshing}
           tools={focusTools}
+          reliabilityPanel={reliabilityPanel}
+          onMarkDrafted={reliability.markDrafted}
           onRefresh={() => {
             onRefresh();
             void draftPicks.refresh();
@@ -2013,6 +2137,7 @@ export function LiveDraftRoom({
       )}
 
       {!warRoom.isUnlocked ? <DraftUnlock warRoom={warRoom} /> : null}
+      {reliabilityPanel}
       {warRoom.dataError ? (
         <div className="data-error" role="alert">
           <CircleAlert />

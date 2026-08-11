@@ -1,4 +1,9 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import {
+  useDeferredValue,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Bell,
   BellRing,
@@ -11,6 +16,7 @@ import {
   Search,
   ShieldAlert,
   Target,
+  UserMinus,
   UsersRound,
 } from "lucide-react";
 import type { useDraftPicks } from "../../hooks/useDraftPicks.ts";
@@ -50,6 +56,8 @@ interface SimpleDraftModeProps {
   usingCachedBoard: boolean;
   refreshing: boolean;
   tools: FocusTools;
+  reliabilityPanel: ReactNode;
+  onMarkDrafted: (player: PlayerIntelligence) => void;
   onRefresh: () => void;
 }
 
@@ -136,7 +144,13 @@ function RecommendationRow({
   );
 }
 
-function AvailableRanking({ available }: { available: PlayerIntelligence[] }) {
+function AvailableRanking({
+  available,
+  onMarkDrafted,
+}: {
+  available: PlayerIntelligence[];
+  onMarkDrafted: (player: PlayerIntelligence) => void;
+}) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const players = useMemo(() => {
@@ -177,7 +191,7 @@ function AvailableRanking({ available }: { available: PlayerIntelligence[] }) {
       <div className="simple-ranking-table" role="table">
         <div className="simple-ranking-head" role="row">
           <span>Rank</span><span>Player</span><span>Pos</span><span>Team</span>
-          <span>League</span><span>ADP</span><span>Status</span>
+          <span>League</span><span>ADP</span><span>Status</span><span>Correction</span>
         </div>
         {players.map((player, index) => (
           <div className="simple-ranking-row" role="row" key={player.id}>
@@ -191,6 +205,13 @@ function AvailableRanking({ available }: { available: PlayerIntelligence[] }) {
             <span>#{number(player.leagueRank ?? player.ecr)}</span>
             <span>{number(player.adp, 1)}</span>
             <em>{player.injuryStatus || "Available"}</em>
+            <button
+              type="button"
+              onClick={() => onMarkDrafted(player)}
+              aria-label={`Mark ${player.name} drafted manually`}
+            >
+              <UserMinus /> Mark drafted
+            </button>
           </div>
         ))}
         {!players.length ? <p>No available player matches that search.</p> : null}
@@ -363,6 +384,8 @@ export function SimpleDraftMode({
   usingCachedBoard,
   refreshing,
   tools,
+  reliabilityPanel,
+  onMarkDrafted,
   onRefresh,
 }: SimpleDraftModeProps) {
   const lead = recommendations[0] ?? null;
@@ -463,13 +486,18 @@ export function SimpleDraftMode({
             </div>
           </section>
 
-          <AvailableRanking available={available} />
+          <AvailableRanking
+            available={available}
+            onMarkDrafted={onMarkDrafted}
+          />
         </main>
 
         <RosterPlanPanel plan={rosterPlan} />
       </div>
 
       <RecentAndOpponents picks={recentPicks} teams={teams} forecast={forecast} />
+
+      {reliabilityPanel}
 
       <footer className="simple-freshness">
         <Database />
