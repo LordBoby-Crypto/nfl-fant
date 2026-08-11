@@ -1,9 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Activity,
   CalendarClock,
   Check,
   ChevronDown,
+  CircleHelp,
   ClipboardList,
   Clock3,
   ExternalLink,
@@ -55,6 +64,9 @@ import {
   buildLeagueSettingsModel,
   type LeagueSettingsModel,
 } from "./features/league-settings/model";
+import { FirstTimeWalkthrough } from "./features/help/FirstTimeWalkthrough";
+
+const HelpPage = lazy(() => import("./features/help/HelpPage"));
 
 type View =
   | "Overview"
@@ -65,7 +77,8 @@ type View =
   | "Waivers"
   | "Trades"
   | "Matchups"
-  | "Safety";
+  | "Safety"
+  | "Help";
 type StatusView = Exclude<
   View,
   | "Overview"
@@ -76,6 +89,7 @@ type StatusView = Exclude<
   | "Waivers"
   | "Trades"
   | "Safety"
+  | "Help"
 >;
 
 const NAV_ITEMS: Array<{
@@ -91,7 +105,26 @@ const NAV_ITEMS: Array<{
   { name: "Trades", icon: WalletCards },
   { name: "Matchups", icon: UsersRound },
   { name: "Safety", icon: HardDrive },
+  { name: "Help", icon: CircleHelp },
 ];
+
+const WALKTHROUGH_STORAGE_KEY = "war-room.walkthrough.m24.complete";
+
+function shouldLaunchWalkthrough() {
+  try {
+    return localStorage.getItem(WALKTHROUGH_STORAGE_KEY) !== "true";
+  } catch {
+    return true;
+  }
+}
+
+function rememberWalkthroughComplete() {
+  try {
+    localStorage.setItem(WALKTHROUGH_STORAGE_KEY, "true");
+  } catch {
+    // The walkthrough can still be dismissed for the current tab.
+  }
+}
 
 function formatDraftDate(startTime: number | null) {
   if (!startTime) return "Not scheduled";
@@ -332,6 +365,18 @@ function LoadingScreen() {
 function App() {
   const [view, setView] = useState<View>("Overview");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [walkthroughOpen, setWalkthroughOpen] = useState(
+    shouldLaunchWalkthrough,
+  );
+  const finishWalkthrough = useCallback(() => {
+    rememberWalkthroughComplete();
+    setWalkthroughOpen(false);
+  }, []);
+  const openHelpFromWalkthrough = useCallback(() => {
+    rememberWalkthroughComplete();
+    setWalkthroughOpen(false);
+    setView("Help");
+  }, []);
   const [preflightRefreshKey, setPreflightRefreshKey] = useState(0);
   const league = useLeagueSnapshot();
   const { data, error, loading, refreshing, refresh } = league;
@@ -354,7 +399,8 @@ function App() {
       view === "Waivers" ||
       view === "Trades" ||
       view === "Matchups" ||
-      view === "Safety",
+      view === "Safety" ||
+      view === "Help",
     view === "Matchups"
       ? weeklyOutlook.data?.currentWeek ?? 1
       : view === "Overview" && data?.draft.status === "complete"
@@ -375,7 +421,8 @@ function App() {
       view === "My Team" ||
       view === "Waivers" ||
       view === "Trades" ||
-      view === "Matchups",
+      view === "Matchups" ||
+      view === "Help",
   );
   const focusedDraftActive = data?.draft.status === "drafting";
   const previousDraftStatus = useRef(data?.draft.status ?? null);
@@ -409,14 +456,25 @@ function App() {
 
   if (!data) {
     return (
-      <div className="loading-screen error-screen">
-        <X />
-        <h1>Sleeper is not responding</h1>
-        <p>{error ?? "The league data could not be loaded."}</p>
-        <button className="button primary" onClick={() => void refresh()}>
-          Try again
-        </button>
-      </div>
+      <>
+        <div className="loading-screen error-screen">
+          <X />
+          <h1>Sleeper is not responding</h1>
+          <p>{error ?? "The league data could not be loaded."}</p>
+          <button className="button primary" onClick={() => void refresh()}>
+            Try again
+          </button>
+          <button className="walkthrough-error-help" onClick={() => setWalkthroughOpen(true)}>
+            Open beginner and offline help
+          </button>
+        </div>
+        {walkthroughOpen ? (
+          <FirstTimeWalkthrough
+            onFinish={finishWalkthrough}
+            onOpenHelp={finishWalkthrough}
+          />
+        ) : null}
+      </>
     );
   }
   if (!settingsModel) return null;
@@ -470,11 +528,19 @@ function App() {
           <span>{title}</span>
           <ChevronDown />
         </button>
-        <div className="sync-state">
-          <span className="sync-dot"><Check /></span>
+        <div className={`sync-state ${error ? "is-warning" : ""}`}>
+          <span className="sync-dot">
+            {error ? <RefreshCw className="spin" /> : <Check />}
+          </span>
           <span>
-            <strong>Sleeper connected</strong>
-            <small>Synced {formatSyncTime(data.fetchedAt)}</small>
+            <strong>
+              {error ? "Sleeper reconnecting" : "Sleeper connected"}
+            </strong>
+            <small>
+              {error
+                ? "Showing last successful data"
+                : `Synced ${formatSyncTime(data.fetchedAt)}`}
+            </small>
           </span>
         </div>
         <div className="user-state">
@@ -602,6 +668,31 @@ function App() {
             syncAvailable={Boolean(intelligence.data?.features?.secureSync)}
             warRoom={warRoom}
           />
+        ) : view === "Help" ? (
+          <Suspense
+            fallback={(
+              <main className="workspace-page help-loading">
+                <RefreshCw className="spin" />
+                <strong>Loading Help…</strong>
+              </main>
+            )}
+          >
+            <HelpPage
+              settings={settingsModel}
+              board={warRoom.board}
+              leagueFetchedAt={league.lastSuccessfulAt}
+              picksFetchedAt={draftPicks.fetchedAt}
+              leagueError={error}
+              picksError={draftPicks.error}
+              usingCachedBoard={warRoom.usingCachedBoard}
+              onRestartWalkthrough={() => setWalkthroughOpen(true)}
+              onRefresh={() => {
+                void refresh();
+                void draftPicks.refresh();
+                warRoom.refresh();
+              }}
+            />
+          </Suspense>
         ) : (
           <StatusPage
             view={view}
@@ -643,6 +734,13 @@ function App() {
           );
         })}
       </nav>
+
+      {walkthroughOpen ? (
+        <FirstTimeWalkthrough
+          onFinish={finishWalkthrough}
+          onOpenHelp={openHelpFromWalkthrough}
+        />
+      ) : null}
     </div>
   );
 }
