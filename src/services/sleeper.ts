@@ -1,5 +1,6 @@
 import type {
   Draft,
+  DraftPickDiagnostic,
   DraftPickTelemetry,
   FeedTelemetry,
   League,
@@ -218,64 +219,182 @@ export async function getDraftPicksWithTelemetry(
 ): Promise<{
   picks: SleeperDraftPick[];
   telemetry: DraftPickTelemetry;
+  diagnostics: DraftPickDiagnostic[];
 }> {
   const result = await getJsonWithTelemetry<SleeperDraftPick[]>(
     `/draft/${draftId}/picks`,
     signal,
   );
-  const picks = deduplicateDraftPicks(result.value);
+  const analysis = analyzeDraftPicks(result.value);
   return {
-    picks,
+    picks: analysis.picks,
     telemetry: {
       attempts: result.attempts,
       durationMs: result.durationMs,
       received: result.value.length,
-      unique: picks.length,
+      unique: analysis.picks.length,
       retained: 0,
+      duplicatePickNumbers: analysis.duplicatePickNumbers,
+      duplicatePlayers: analysis.duplicatePlayers,
+      missingPickNumbers: analysis.missingPickNumbers,
+      reordered: analysis.reordered,
     },
+    diagnostics: analysis.diagnostics,
   };
 }
 
 export function deduplicateDraftPicks(picks: SleeperDraftPick[]) {
+  return analyzeDraftPicks(picks).picks;
+}
+
+function pickIdentity(pick: SleeperDraftPick) {
+  const playerId = String(pick.player_id ?? "").trim();
+  if (playerId) return `id:${playerId}`;
+  const name = normalizePlayerName(
+    [pick.metadata?.first_name, pick.metadata?.last_name]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return name ? `name:${name}` : "";
+}
+
+export function analyzeDraftPicks(
+  picks: SleeperDraftPick[],
+  detectedAt = Date.now(),
+) {
+  const diagnostics: DraftPickDiagnostic[] = [];
+  const valid = picks.filter(
+    (pick) => Number.isFinite(pick.pick_no) && pick.pick_no >= 1,
+  );
+  const originalNumbers = valid.map((pick) => pick.pick_no);
+  const reordered = originalNumbers.some(
+    (pickNumber, index) => index > 0 && pickNumber < originalNumbers[index - 1],
+  );
+  if (reordered) {
+    diagnostics.push({
+      id: `reordered:${originalNumbers.join("-")}`,
+      kind: "reordered-picks",
+      message: "Sleeper returned picks out of order. The War Room restored numerical draft order.",
+      pickNumbers: originalNumbers,
+      detectedAt,
+    });
+  }
+
   const byPick = new Map<number, SleeperDraftPick>();
-  for (const pick of picks) {
-    if (!Number.isFinite(pick.pick_no) || pick.pick_no < 1) continue;
+  const duplicatePickNumbers = new Set<number>();
+  for (const pick of valid) {
+    if (byPick.has(pick.pick_no)) duplicatePickNumbers.add(pick.pick_no);
     byPick.set(pick.pick_no, pick);
   }
-  return [...byPick.values()].sort((left, right) => left.pick_no - right.pick_no);
+  if (duplicatePickNumbers.size) {
+    const pickNumbers = [...duplicatePickNumbers].sort((left, right) => left - right);
+    diagnostics.push({
+      id: `duplicate-picks:${pickNumbers.join("-")}`,
+      kind: "duplicate-pick",
+      message: `Sleeper repeated ${pickNumbers.length} pick number${pickNumbers.length === 1 ? "" : "s"}. The newest value for each pick was retained.`,
+      pickNumbers,
+      detectedAt,
+    });
+  }
+
+  const sorted = [...byPick.values()].sort(
+    (left, right) => left.pick_no - right.pick_no,
+  );
+  const byPlayer = new Map<string, SleeperDraftPick>();
+  const duplicatePlayerPicks: number[] = [];
+  for (const pick of sorted) {
+    const identity = pickIdentity(pick);
+    if (!identity) continue;
+    if (byPlayer.has(identity)) {
+      duplicatePlayerPicks.push(pick.pick_no);
+      continue;
+    }
+    byPlayer.set(identity, pick);
+  }
+  const uniquePlayers = sorted.filter((pick) => {
+    const identity = pickIdentity(pick);
+    return !identity || byPlayer.get(identity) === pick;
+  });
+  if (duplicatePlayerPicks.length) {
+    diagnostics.push({
+      id: `duplicate-players:${duplicatePlayerPicks.join("-")}`,
+      kind: "duplicate-player",
+      message: `Sleeper listed the same player more than once. ${duplicatePlayerPicks.length} later duplicate${duplicatePlayerPicks.length === 1 ? " was" : "s were"} quarantined.`,
+      pickNumbers: duplicatePlayerPicks,
+      detectedAt,
+    });
+  }
+
+  const highestPick = sorted.at(-1)?.pick_no ?? 0;
+  const occupied = new Set(sorted.map((pick) => pick.pick_no));
+  const missing = Array.from({ length: highestPick }, (_, index) => index + 1)
+    .filter((pickNumber) => !occupied.has(pickNumber));
+  if (missing.length) {
+    diagnostics.push({
+      id: `missing:${missing.join("-")}`,
+      kind: "missing-pick",
+      message: `Sleeper skipped ${missing.length} pick${missing.length === 1 ? "" : "s"} before its latest selection. The last complete local values are retained when available.`,
+      pickNumbers: missing,
+      detectedAt,
+    });
+  }
+
+  return {
+    picks: uniquePlayers,
+    diagnostics,
+    duplicatePickNumbers: duplicatePickNumbers.size,
+    duplicatePlayers: duplicatePlayerPicks.length,
+    missingPickNumbers: missing.length,
+    reordered,
+  };
 }
 
 export function reconcileDraftPicks(
   previous: SleeperDraftPick[],
   incoming: SleeperDraftPick[],
 ) {
-  const stablePrevious = deduplicateDraftPicks(previous);
-  const stableIncoming = deduplicateDraftPicks(incoming);
+  const stablePrevious = analyzeDraftPicks(previous).picks;
+  const incomingAnalysis = analyzeDraftPicks(incoming);
+  const stableIncoming = incomingAnalysis.picks;
   if (!stablePrevious.length) {
     return {
       picks: stableIncoming,
       retained: 0,
       regressed: false,
+      diagnostics: incomingAnalysis.diagnostics,
     };
   }
 
   const incomingByPick = new Map(
     stableIncoming.map((pick) => [pick.pick_no, pick] as const),
   );
+  const incomingPlayers = new Set(stableIncoming.map(pickIdentity));
   const missingPrevious = stablePrevious.filter(
-    (pick) => !incomingByPick.has(pick.pick_no),
+    (pick) =>
+      !incomingByPick.has(pick.pick_no) &&
+      !incomingPlayers.has(pickIdentity(pick)),
   );
   if (missingPrevious.length) {
     const merged = new Map(
       stablePrevious.map((pick) => [pick.pick_no, pick] as const),
     );
     for (const pick of stableIncoming) merged.set(pick.pick_no, pick);
+    const mergedAnalysis = analyzeDraftPicks([...merged.values()]);
+    const pickNumbers = missingPrevious.map((pick) => pick.pick_no);
     return {
-      picks: [...merged.values()].sort(
-        (left, right) => left.pick_no - right.pick_no,
-      ),
+      picks: mergedAnalysis.picks,
       retained: missingPrevious.length,
       regressed: true,
+      diagnostics: [
+        ...incomingAnalysis.diagnostics,
+        {
+          id: `regressed:${pickNumbers.join("-")}`,
+          kind: "regressed-feed" as const,
+          message: `Sleeper omitted ${missingPrevious.length} previously confirmed pick${missingPrevious.length === 1 ? "" : "s"}. The last complete local values were retained.`,
+          pickNumbers,
+          detectedAt: Date.now(),
+        },
+      ],
     };
   }
 
@@ -283,6 +402,7 @@ export function reconcileDraftPicks(
     picks: stableIncoming,
     retained: 0,
     regressed: false,
+    diagnostics: incomingAnalysis.diagnostics,
   };
 }
 

@@ -418,9 +418,17 @@ export function availablePlayers(
   picks: SleeperDraftPick[],
 ) {
   const drafted = buildDraftedPlayerLookup(picks);
-  return board.filter(
-    (player) => !draftPickForPlayer(player, drafted),
-  );
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  return board.filter((player) => {
+    if (draftPickForPlayer(player, drafted)) return false;
+    const id = String(player.id);
+    const name = normalizePlayerName(player.name);
+    if (seenIds.has(id) || (name && seenNames.has(name))) return false;
+    seenIds.add(id);
+    if (name) seenNames.add(name);
+    return true;
+  });
 }
 
 export interface DraftedPlayerLookup {

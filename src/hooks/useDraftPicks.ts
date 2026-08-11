@@ -3,7 +3,11 @@ import {
   getDraftPicksWithTelemetry,
   reconcileDraftPicks,
 } from "../services/sleeper";
-import type { DraftPickTelemetry, SleeperDraftPick } from "../types";
+import type {
+  DraftPickDiagnostic,
+  DraftPickTelemetry,
+  SleeperDraftPick,
+} from "../types";
 import {
   cacheDraftPicks,
   readCachedDraftPicks,
@@ -18,6 +22,7 @@ interface DraftPickState {
   telemetry: DraftPickTelemetry | null;
   consecutiveErrors: number;
   retainedAfterError: boolean;
+  diagnostics: DraftPickDiagnostic[];
 }
 
 export function useDraftPicks(
@@ -37,6 +42,7 @@ export function useDraftPicks(
     telemetry: null,
     consecutiveErrors: 0,
     retainedAfterError: false,
+    diagnostics: [],
   });
 
   const refresh = useCallback(async (silent = false) => {
@@ -66,6 +72,7 @@ export function useDraftPicks(
           },
           consecutiveErrors: 0,
           retainedAfterError: reconciled.regressed,
+          diagnostics: reconciled.diagnostics,
         };
       });
     } catch (reason) {
@@ -109,6 +116,7 @@ export function useDraftPicks(
             },
             consecutiveErrors: 0,
             retainedAfterError: reconciled.regressed,
+            diagnostics: reconciled.diagnostics,
           };
         });
       })
@@ -151,6 +159,13 @@ export function useDraftPicks(
     const timer = window.setInterval(() => void refresh(true), interval);
     return () => window.clearInterval(timer);
   }, [active, draftId, refresh, status]);
+
+  useEffect(() => {
+    if (!active || !draftId) return;
+    const reconnect = () => void refresh(false);
+    window.addEventListener("online", reconnect);
+    return () => window.removeEventListener("online", reconnect);
+  }, [active, draftId, refresh]);
 
   return { ...state, refresh };
 }

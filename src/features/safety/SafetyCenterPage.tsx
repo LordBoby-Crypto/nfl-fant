@@ -35,29 +35,16 @@ import {
   loadSecureSyncVault,
   parseRecoveryCode,
   saveSecureSyncVault,
+  readSyncCredentials,
+  storeSyncCredentials,
   type SyncCredentials,
 } from "./sync";
+import {
+  readLatestLiveReliabilityState,
+  writeLiveReliabilityState,
+} from "../live-draft/liveReliability.ts";
 
 type WarRoomState = ReturnType<typeof useWarRoom>;
-const SYNC_CREDENTIALS_KEY = "war-room.secure-sync-credentials.v1";
-
-function readSyncCredentials(): SyncCredentials | null {
-  try {
-    const value = JSON.parse(localStorage.getItem(SYNC_CREDENTIALS_KEY) ?? "null") as
-      | Partial<SyncCredentials>
-      | null;
-    return value?.vaultId && value?.key
-      ? parseRecoveryCode(formatRecoveryCode(value as SyncCredentials))
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function storeSyncCredentials(credentials: SyncCredentials) {
-  localStorage.setItem(SYNC_CREDENTIALS_KEY, JSON.stringify(credentials));
-}
-
 function downloadText(filename: string, content: string, type: string) {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -250,7 +237,12 @@ export function SafetyCenterPage({
     setSyncing(true);
     try {
       const credentials = createSyncCredentials();
-      const result = await saveSecureSyncVault(controls, credentials);
+      const result = await saveSecureSyncVault(
+        controls,
+        credentials,
+        undefined,
+        readLatestLiveReliabilityState(),
+      );
       storeSyncCredentials(credentials);
       setSyncCredentials(credentials);
       setRecoveryCode(formatRecoveryCode(credentials));
@@ -267,7 +259,12 @@ export function SafetyCenterPage({
     if (!syncCredentials || syncing) return;
     setSyncing(true);
     try {
-      const result = await saveSecureSyncVault(controls, syncCredentials);
+      const result = await saveSecureSyncVault(
+        controls,
+        syncCredentials,
+        undefined,
+        readLatestLiveReliabilityState(),
+      );
       setSyncUpdatedAt(result.updatedAt);
       setMessage("This device pushed its current draft preferences to the encrypted vault.");
     } catch (error) {
@@ -283,6 +280,9 @@ export function SafetyCenterPage({
     try {
       const result = await loadSecureSyncVault(credentials);
       replace(result.backup.controls);
+      if (result.backup.liveReliability) {
+        writeLiveReliabilityState(result.backup.liveReliability);
+      }
       storeSyncCredentials(credentials);
       setSyncCredentials(credentials);
       setSyncUpdatedAt(result.updatedAt);
@@ -408,8 +408,9 @@ export function SafetyCenterPage({
           <div>
             <h2>Secure cross-device sync</h2>
             <p>
-              Preferences are encrypted in this browser with AES-GCM before upload.
-              The sync service stores ciphertext and cannot read your queue or lists.
+              Preferences, manual corrections, and recommendation history are encrypted
+              in this browser with AES-GCM before upload. The sync service stores
+              ciphertext and cannot read your queue, choices, or history.
             </p>
             {syncUpdatedAt ? <small>Last vault update {new Date(syncUpdatedAt).toLocaleString()}</small> : null}
           </div>

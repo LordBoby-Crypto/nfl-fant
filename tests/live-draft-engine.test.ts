@@ -191,6 +191,16 @@ test("drafted players are removed by both id and normalized name", () => {
   assert.equal(remaining.some((item) => item.id === "2"), false);
 });
 
+test("availability never exposes duplicate provider rows for the same player", () => {
+  const duplicate = {
+    ...board[0],
+    id: "other-provider-id",
+    name: "  Alpha Runner Jr. ",
+  };
+  const remaining = availablePlayers([board[0], duplicate, board[1]], []);
+  assert.deepEqual(remaining.map((item) => item.id), ["1", "2"]);
+});
+
 test("recommendations honor avoid and target controls while explaining all factors", () => {
   const teams = buildTeamDraftStates({ draft, users, rosters, picks: [] });
   const cursor = getDraftCursor(draft, [], 2);
