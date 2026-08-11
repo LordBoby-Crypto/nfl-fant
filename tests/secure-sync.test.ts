@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { DraftControlState } from "../src/features/live-draft/engine.ts";
 import {
+  createDraftPreferenceBackup,
+} from "../src/features/safety/model.ts";
+import {
   createSyncCredentials,
   decryptDraftPreferences,
   deriveVaultSecret,
@@ -36,13 +39,17 @@ test("secure sync recovery code preserves a 128-bit vault id and 256-bit key", (
 
 test("draft preferences round-trip through AES-GCM without plaintext in ciphertext", async () => {
   const credentials = createSyncCredentials();
+  const exportedAt = new Date("2026-07-30T17:00:00.000Z");
+  const plaintext = Buffer.from(
+    JSON.stringify(createDraftPreferenceBackup(controls, exportedAt)),
+  );
   const envelope = await encryptDraftPreferences(
     controls,
     credentials,
-    new Date("2026-07-30T17:00:00.000Z"),
+    exportedAt,
   );
   assert.equal(envelope.version, 1);
-  assert.equal(envelope.ciphertext.includes("p1"), false);
+  assert.equal(Buffer.from(envelope.ciphertext, "base64url").indexOf(plaintext), -1);
   const backup = await decryptDraftPreferences(envelope, credentials);
   assert.deepEqual(backup.controls, controls);
 });
