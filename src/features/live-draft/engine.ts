@@ -323,13 +323,7 @@ function calculateNeeds(
     counts.IDP;
   const idpFlexMissing = Math.max(
     0,
-    Math.max(
-      0,
-      (draft.settings.slots_idp_flex ?? 0) -
-        requirements.DL -
-        requirements.LB -
-        requirements.DB,
-    ) - idpFlexEligibleFilled,
+    (draft.settings.slots_idp_flex ?? 0) - idpFlexEligibleFilled,
   );
   needs.push({
     position: "IDP_FLEX",

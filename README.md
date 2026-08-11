@@ -267,6 +267,16 @@ handoff; duplicate-player prevention; and measured recommendation
 recalculation budgets. Major feature work is frozen until after the draft under
 [`docs/DRAFT_DAY_RELEASE_FREEZE.md`](docs/DRAFT_DAY_RELEASE_FREEZE.md).
 
+Milestone 26 replaces that original gate with a complete adaptive rehearsal
+matrix spanning standard, half-PPR, PPR, Superflex, tight-end premium, keeper,
+IDP, custom/partial scoring, snake and linear drafts, 8–16 teams, 10–16 rounds,
+multiple slots and live commissioner changes. Every pick must rebuild and
+validate availability, rankings, recommendations and forecasts, while the
+release also repeats outage, session, delayed-pick, correction, reconciliation,
+cross-device and rendered desktop/phone checks. The replacement major-feature
+freeze activates only after the verified production release under
+[`docs/MILESTONE_26_RELEASE_QUALIFICATION.md`](docs/MILESTONE_26_RELEASE_QUALIFICATION.md).
+
 The project is configured for GitHub Pages at `/nfl-fant/`.
 
 ## Secure player data

@@ -317,6 +317,47 @@ test("SUPER_FLEX demand and unfilled starters beat redundant bench depth", () =>
   );
 });
 
+test("IDP_FLEX remains open until an extra defender is drafted beyond core IDP starters", () => {
+  const idpDraft: Draft = {
+    ...draft,
+    settings: {
+      ...draft.settings,
+      slots_dl: 1,
+      slots_lb: 1,
+      slots_db: 1,
+      slots_idp_flex: 1,
+    },
+  };
+  const lineman = player("idp-dl", "Core Lineman", "DL", 20);
+  const linebacker = player("idp-lb", "Core Linebacker", "LB", 21);
+  const back = player("idp-db", "Core Defensive Back", "DB", 22);
+  const flex = player("idp-flex", "Flex Defender", "LB", 23);
+  const corePicks = [lineman, linebacker, back].map((item, index) =>
+    draftedPlayer(index + 1, item, 2),
+  );
+  const coreTeam = buildTeamDraftStates({
+    draft: idpDraft,
+    users,
+    rosters,
+    picks: corePicks,
+  }).find((team) => team.rosterId === 2)!;
+  assert.equal(
+    coreTeam.needs.find((need) => need.position === "IDP_FLEX")?.missing,
+    1,
+  );
+
+  const completedTeam = buildTeamDraftStates({
+    draft: idpDraft,
+    users,
+    rosters,
+    picks: [...corePicks, draftedPlayer(4, flex, 2)],
+  }).find((team) => team.rosterId === 2)!;
+  assert.equal(
+    completedTeam.needs.find((need) => need.position === "IDP_FLEX")?.missing,
+    0,
+  );
+});
+
 test("the engine scores useful stacks, bye/risk concentration and role uncertainty", () => {
   const rosterQb = player("stack-qb", "Dallas Quarterback", "QB", 15, {
     team: "DAL",
