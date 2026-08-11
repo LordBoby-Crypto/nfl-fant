@@ -1,10 +1,19 @@
-# Draft-day release freeze — pending Milestone 26 production verification
+# Draft-day release freeze — active
 
 The original Milestone 15 freeze was superseded by the approved Milestones
 16–26 upgrade program. Milestone 26 is the final major-feature release before
-the 2026 draft. The replacement freeze is **not active in this release
-candidate**. It may be activated only after the Milestone 26 merge is deployed
-and its production verification is complete.
+the 2026 draft. The replacement major-feature freeze is **active** after the
+verified production release recorded below.
+
+## Activation evidence
+
+- Verified production commit: `c4571e19ac6e41165fed1ea47404716bae0770e8`
+- Verified at: `2026-08-11T17:43:41-05:00`
+- GitHub Pages workflow: run `31543436452` completed successfully
+- GitHub Pages bundle: `assets/index-DeHB90bT.js`
+- Vercel production deployment: `dpl_Fp2QZkeBQzBxr645cvAvdmNEmgNP` was `READY`
+- Release gate: 133/133 tests, rehearsal matrix, lint, build, desktop/phone QA,
+  status, session protection, runtime errors and public asset integrity passed
 
 ## Allowed during the freeze
 
@@ -48,7 +57,7 @@ build. `tests/draft-rehearsal.test.ts` and
 
 ## Manual production gate
 
-Before merging Milestone 15:
+For every freeze-period production change:
 
 1. Verify the exact Vercel preview build and its logs.
 2. Open the live Draft Room on desktop and phone-sized viewports.
@@ -59,7 +68,6 @@ Before merging Milestone 15:
    Vercel runtime logs.
 6. After merge, verify the same commit is live on Vercel and GitHub Pages.
 
-After the first Milestone 26 production deployment passes every gate above,
-activate the freeze in a separate documentation-only commit. That commit must
-record the verified production commit and timestamp. Until that activation
-commit reaches production, the replacement freeze remains pending.
+The freeze was activated only after the first Milestone 26 production
+deployment passed every gate above. This document is the required separate
+documentation-only activation record.
