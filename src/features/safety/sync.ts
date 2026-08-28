@@ -154,14 +154,9 @@ export async function decryptDraftPreferences(
 }
 
 function syncApiRoot() {
-  const configured = (import.meta.env.VITE_INTELLIGENCE_API_URL as string | undefined)
+  return (import.meta.env.VITE_INTELLIGENCE_API_URL as string | undefined)
     ?.trim()
     .replace(/\/$/, "");
-  const pageOrigin = typeof window === "undefined" ? undefined : window.location.origin;
-  return pageOrigin &&
-    /^https:\/\/nfl-fant-[a-z0-9-]+-logansai\.vercel\.app$/.test(pageOrigin)
-    ? pageOrigin
-    : configured;
 }
 
 function currentSessionToken() {
