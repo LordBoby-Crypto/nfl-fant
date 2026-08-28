@@ -64,6 +64,31 @@ test("CORS responses always vary by Origin and allow GitHub Pages", () => {
   );
 });
 
+test("CORS allows this project's Vercel previews without allowing other projects", () => {
+  const previewOrigin =
+    "https://nfl-fant-hxjjsdyxi-logansai.vercel.app";
+  const previewHarness = responseHarness();
+  const previewRequest = {
+    method: "GET",
+    headers: { origin: previewOrigin },
+  } as VercelRequest;
+
+  assert.equal(applyCors(previewRequest, previewHarness.response), false);
+  assert.equal(
+    previewHarness.headers.get("access-control-allow-origin"),
+    previewOrigin,
+  );
+
+  const unrelatedHarness = responseHarness();
+  const unrelatedRequest = {
+    method: "GET",
+    headers: { origin: "https://another-project-logansai.vercel.app" },
+  } as VercelRequest;
+
+  assert.equal(applyCors(unrelatedRequest, unrelatedHarness.response), true);
+  assert.equal(unrelatedHarness.statusCode, 403);
+});
+
 test("status cache policy cannot reuse an origin-specific CORS response", () => {
   assert.equal(STATUS_CACHE_CONTROL, "private, no-store");
 });
