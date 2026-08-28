@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
     "test:rehearsal": "node --experimental-strip-types --test tests/draft-rehearsal.test.ts tests/adaptive-draft-rehearsal.test.ts",
     "preview": "vite preview"
   },
