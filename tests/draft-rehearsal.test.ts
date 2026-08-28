@@ -121,7 +121,7 @@ const controls: DraftControlState = {
   avoid: ["player-2", "player-279"],
 };
 
-const results: DraftRehearsalResult[] = [1, 7, 14].map((slot) =>
+const results: DraftRehearsalResult[] = [1, 11, 14].map((slot) =>
   runFullDraftRehearsal({
     draft,
     users,
@@ -133,7 +133,7 @@ const results: DraftRehearsalResult[] = [1, 7, 14].map((slot) =>
   }),
 );
 
-test("complete 238-pick rehearsals pass from early, middle and late slots", () => {
+test("complete 238-pick rehearsals pass from early, assigned and late slots", () => {
   for (const result of results) {
     assert.equal(result.completed, true, `slot ${result.slot} did not complete`);
     assert.equal(result.completedPicks, 238);

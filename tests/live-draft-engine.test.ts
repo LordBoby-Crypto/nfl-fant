@@ -5,6 +5,7 @@ import {
   buildTeamDraftStates,
   createSimulatedPick,
   createSimulationSlotMap,
+  getPreDraftSimulatorSetup,
   getDraftCursor,
   getDraftSlotForPick,
   recommendPlayers,
@@ -505,4 +506,43 @@ test("pre-draft simulator stops at each user turn", () => {
   assert.equal(beforeSecondTurn.length, 5);
   assert.equal(getDraftCursor(draft, beforeSecondTurn, 2, slotMap).currentPick, 6);
   assert.equal(getDraftCursor(draft, beforeSecondTurn, 2, slotMap).isUserTurn, true);
+});
+
+test("pre-draft simulator remains available after Sleeper assigns a slot", () => {
+  assert.deepEqual(
+    getPreDraftSimulatorSetup({
+      draftStatus: "pre_draft",
+      teams: 14,
+      hasUserRoster: true,
+      assignedPosition: 11,
+    }),
+    {
+      available: true,
+      defaultSlot: 11,
+    },
+  );
+});
+
+test("pre-draft simulator falls back safely when no slot is assigned", () => {
+  assert.deepEqual(
+    getPreDraftSimulatorSetup({
+      draftStatus: "pre_draft",
+      teams: 14,
+      hasUserRoster: true,
+      assignedPosition: null,
+    }),
+    {
+      available: true,
+      defaultSlot: 7,
+    },
+  );
+  assert.equal(
+    getPreDraftSimulatorSetup({
+      draftStatus: "drafting",
+      teams: 14,
+      hasUserRoster: true,
+      assignedPosition: 11,
+    }).available,
+    false,
+  );
 });
