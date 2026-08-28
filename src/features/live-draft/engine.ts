@@ -82,6 +82,35 @@ export interface DraftRecommendation {
   modelConfidence?: "High" | "Medium" | "Low";
 }
 
+export interface PreDraftSimulatorSetup {
+  available: boolean;
+  defaultSlot: number;
+}
+
+export function getPreDraftSimulatorSetup({
+  draftStatus,
+  teams,
+  hasUserRoster,
+  assignedPosition,
+}: {
+  draftStatus: Draft["status"];
+  teams: number;
+  hasUserRoster: boolean;
+  assignedPosition: number | null | undefined;
+}): PreDraftSimulatorSetup {
+  const fallbackSlot = Math.max(1, Math.ceil(teams / 2));
+  const assignedSlotIsValid =
+    assignedPosition != null &&
+    Number.isInteger(assignedPosition) &&
+    assignedPosition >= 1 &&
+    assignedPosition <= teams;
+
+  return {
+    available: draftStatus === "pre_draft" && hasUserRoster,
+    defaultSlot: assignedSlotIsValid ? assignedPosition : fallbackSlot,
+  };
+}
+
 export interface DraftCursor {
   currentPick: number;
   currentRound: number;

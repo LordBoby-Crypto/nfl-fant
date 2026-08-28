@@ -48,6 +48,7 @@ import {
   buildTeamDraftStates,
   createSimulatedPick,
   createSimulationSlotMap,
+  getPreDraftSimulatorSetup,
   getDraftCursor,
   pickPlayerName,
   pickPosition,
@@ -1397,9 +1398,13 @@ export function LiveDraftRoom({
   const draft = snapshot.draft;
   const userRoster = getUserRoster(snapshot);
   const actualPosition = getDraftPosition(snapshot);
-  const [simSlot, setSimSlot] = useState(() =>
-    Math.max(1, Math.ceil(draft.settings.teams / 2))
-  );
+  const simulatorSetup = getPreDraftSimulatorSetup({
+    draftStatus: draft.status,
+    teams: draft.settings.teams,
+    hasUserRoster: Boolean(userRoster),
+    assignedPosition: actualPosition,
+  });
+  const [simSlot, setSimSlot] = useState(simulatorSetup.defaultSlot);
   const [simulationActive, setSimulationActive] = useState(false);
   const [simulatedPicks, setSimulatedPicks] = useState<SleeperDraftPick[]>([]);
   const [query, setQuery] = useState("");
@@ -1408,8 +1413,12 @@ export function LiveDraftRoom({
   const { controls, moveQueue, toggle } = useDraftControls();
   const { simulationRuns, setSimulationRuns } = useDraftStrategy();
   const board = warRoom.board?.players ?? EMPTY_PLAYERS;
-  const canSimulate =
-    draft.status === "pre_draft" && !actualPosition && Boolean(userRoster);
+  const canSimulate = simulatorSetup.available;
+  useEffect(() => {
+    if (!simulationActive && actualPosition) {
+      setSimSlot(actualPosition);
+    }
+  }, [actualPosition, simulationActive]);
   const slotMap = useMemo(
     () =>
       simulationActive && userRoster
@@ -2032,14 +2041,19 @@ export function LiveDraftRoom({
         <section className="simulator-launch">
           <Bot />
           <div>
-            <h2>Practice before Sleeper assigns your draft slot</h2>
+            <h2>Practice Draft</h2>
             <p>
-              Choose any position. Opponents draft by value and roster need,
-              then the simulator stops for each of your selections.
+              {actualPosition
+                ? `Sleeper assigned you pick ${actualPosition}. Practice from your real slot or choose another position.`
+                : "Choose any position."}{" "}
+              Opponents draft by value and roster need, then the simulator
+              stops for each of your selections. Nothing is written to Sleeper.
             </p>
           </div>
           <label>
-            <span>Practice slot</span>
+            <span>
+              Practice slot{actualPosition ? ` · your slot is ${actualPosition}` : ""}
+            </span>
             <select
               value={simSlot}
               onChange={(event) => setSimSlot(Number(event.target.value))}
@@ -2047,6 +2061,7 @@ export function LiveDraftRoom({
               {Array.from({ length: draft.settings.teams }, (_, index) => (
                 <option key={index + 1} value={index + 1}>
                   Pick {index + 1}
+                  {actualPosition === index + 1 ? " (your slot)" : ""}
                 </option>
               ))}
             </select>
@@ -2057,7 +2072,7 @@ export function LiveDraftRoom({
             disabled={!warRoom.isUnlocked || !board.length}
             onClick={startSimulation}
           >
-            <Play /> Start simulation
+            <Play /> Start 17-round practice
           </button>
         </section>
       ) : null}
