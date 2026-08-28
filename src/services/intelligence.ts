@@ -45,9 +45,24 @@ interface SessionResponse {
 
 const SESSION_STORAGE_KEY = "war-room.session.v1";
 
-const API_ROOT = (import.meta.env.VITE_INTELLIGENCE_API_URL as string | undefined)
+const CONFIGURED_API_ROOT = (import.meta.env.VITE_INTELLIGENCE_API_URL as string | undefined)
   ?.trim()
   .replace(/\/$/, "");
+
+export function intelligenceApiRoot(
+  configuredRoot: string | undefined,
+  pageOrigin: string | undefined,
+) {
+  return pageOrigin &&
+    /^https:\/\/nfl-fant-[a-z0-9-]+-logansai\.vercel\.app$/.test(pageOrigin)
+    ? pageOrigin
+    : configuredRoot;
+}
+
+const API_ROOT = intelligenceApiRoot(
+  CONFIGURED_API_ROOT,
+  typeof window === "undefined" ? undefined : window.location.origin,
+);
 
 function apiUrl(path: string) {
   if (!API_ROOT) {
