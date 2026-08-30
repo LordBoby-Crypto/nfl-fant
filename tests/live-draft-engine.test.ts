@@ -248,6 +248,185 @@ test("recommendations honor avoid and target controls while explaining all facto
   assert.equal(recommendations[0].outcomeRange?.expected, 298);
 });
 
+test("expert spread cannot demote the best opening-pick value at pick 1.11", () => {
+  const liveDraft: Draft = {
+    ...draft,
+    status: "drafting",
+    slot_to_roster_id: Object.fromEntries(
+      Array.from({ length: 14 }, (_, index) => [String(index + 1), index + 1]),
+    ),
+    settings: {
+      ...draft.settings,
+      teams: 14,
+      rounds: 17,
+      slots_bn: 7,
+    },
+  };
+  const liveUsers: LeagueUser[] = Array.from({ length: 14 }, (_, index) => ({
+    user_id: `live-u${index + 1}`,
+    display_name: index === 10 ? "KingBoby" : `Live Team ${index + 1}`,
+    avatar: null,
+    metadata: null,
+  }));
+  const liveRosters: Roster[] = Array.from({ length: 14 }, (_, index) => ({
+    ...rosters[0],
+    roster_id: index + 1,
+    owner_id: `live-u${index + 1}`,
+  }));
+  const drafted = Array.from({ length: 10 }, (_, index) =>
+    player(
+      `drafted-${index + 1}`,
+      `Drafted Player ${index + 1}`,
+      index % 2 ? "WR" : "RB",
+      index + 1,
+    ),
+  );
+  const picks = drafted.map((item, index): SleeperDraftPick => ({
+    player_id: item.id,
+    picked_by: `live-u${index + 1}`,
+    roster_id: index + 1,
+    round: 1,
+    draft_slot: index + 1,
+    pick_no: index + 1,
+    is_keeper: false,
+    metadata: {
+      first_name: item.name.split(" ")[0],
+      last_name: item.name.split(" ").slice(1).join(" "),
+      team: item.team,
+      position: item.position,
+    },
+  }));
+  const candidates = [
+    player("jefferson", "Justin Jefferson", "WR", 8, {
+      team: "MIN",
+      leagueRank: 6,
+      leaguePositionRank: 6,
+      projectedPoints: 292,
+      scarcityAdjustedValue: 37,
+      expertBest: 4,
+      expertWorst: 28,
+    }),
+    player("london", "Drake London", "WR", 11, {
+      team: "ATL",
+      leagueRank: 7,
+      leaguePositionRank: 7,
+      projectedPoints: 289,
+      scarcityAdjustedValue: 34,
+      expertBest: 9,
+      expertWorst: 26,
+    }),
+    player("brown", "A.J. Brown", "WR", 12, {
+      team: "NE",
+      leagueRank: 8,
+      leaguePositionRank: 8,
+      projectedPoints: 286,
+      scarcityAdjustedValue: 33,
+      expertBest: 6,
+      expertWorst: 35,
+    }),
+    player("collins", "Nico Collins", "WR", 13, {
+      team: "HOU",
+      leagueRank: 9,
+      leaguePositionRank: 9,
+      projectedPoints: 284,
+      scarcityAdjustedValue: 32,
+      expertBest: 9,
+      expertWorst: 28,
+    }),
+    player("cook", "James Cook III", "RB", 14, {
+      team: "BUF",
+      leagueRank: 10,
+      leaguePositionRank: 5,
+      projectedPoints: 281,
+      scarcityAdjustedValue: 31,
+      expertBest: 7,
+      expertWorst: 31,
+    }),
+    player("achane", "De'Von Achane", "RB", 20, {
+      team: "MIA",
+      leagueRank: 11,
+      leaguePositionRank: 7,
+      projectedPoints: 285,
+      scarcityAdjustedValue: 30,
+      expertBest: 11,
+      expertWorst: 43,
+    }),
+  ];
+  const teams = buildTeamDraftStates({
+    draft: liveDraft,
+    users: liveUsers,
+    rosters: liveRosters,
+    picks,
+  });
+  const cursor = getDraftCursor(liveDraft, picks, 11);
+  const recommendations = recommendPlayers({
+    available: candidates,
+    allPlayers: [...drafted, ...candidates],
+    teams,
+    userRosterId: 11,
+    cursor,
+    controls: {
+      watchlist: [],
+      queue: [],
+      target: [],
+      sleeper: [],
+      avoid: [],
+    },
+    draft: liveDraft,
+  });
+
+  assert.equal(cursor.currentPick, 11);
+  assert.equal(cursor.isUserTurn, true);
+  assert.equal(recommendations[0].player.name, "Justin Jefferson");
+  assert.equal(
+    recommendations.every(
+      (recommendation) => factorScore(recommendation, "expert-agreement") === 0,
+    ),
+    true,
+  );
+});
+
+test("expert spread changes confidence range without changing recommendation score", () => {
+  const tightRange = player("tight", "Tight Range", "WR", 8, {
+    expertBest: 6,
+    expertWorst: 10,
+  });
+  const wideRange = player("wide", "Wide Range", "WR", 8, {
+    expertBest: 2,
+    expertWorst: 34,
+  });
+  const teams = buildTeamDraftStates({ draft, users, rosters, picks: [] });
+  const recommendations = recommendPlayers({
+    available: [tightRange, wideRange],
+    allPlayers: [tightRange, wideRange],
+    teams,
+    userRosterId: 2,
+    cursor: getDraftCursor(draft, [], 2),
+    controls: {
+      watchlist: [],
+      queue: [],
+      target: [],
+      sleeper: [],
+      avoid: [],
+    },
+    draft,
+  });
+  const tight = recommendations.find((item) => item.player.id === "tight")!;
+  const wide = recommendations.find((item) => item.player.id === "wide")!;
+
+  assert.equal(tight.score, wide.score);
+  assert.equal(factorScore(tight, "outcome-range"), factorScore(wide, "outcome-range"));
+  assert.equal(factorScore(tight, "expert-agreement"), 0);
+  assert.equal(factorScore(wide, "expert-agreement"), 0);
+  assert.equal(tight.modelConfidence, "High");
+  assert.equal(wide.modelConfidence, "Medium");
+  assert.equal(
+    (wide.outcomeRange?.ceiling ?? 0) - (wide.outcomeRange?.floor ?? 0) >
+      (tight.outcomeRange?.ceiling ?? 0) - (tight.outcomeRange?.floor ?? 0),
+    true,
+  );
+});
+
 test("avoided players never re-enter recommendations when the pool is small", () => {
   const smallBoard = board.slice(0, 4);
   const teams = buildTeamDraftStates({ draft, users, rosters, picks: [] });

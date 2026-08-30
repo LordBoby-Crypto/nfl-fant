@@ -291,6 +291,8 @@ function confidenceFor(
   }
   if (recommendation.player.expertBest === null || recommendation.player.expertWorst === null) {
     reduceTo("Medium", "The expert-ranking range is incomplete.");
+  } else if (recommendation.player.expertWorst - recommendation.player.expertBest > 18) {
+    reduceTo("Medium", "The expert-ranking range is wide, which lowers confidence without changing player value.");
   }
   if (recommendation.risk === "High") {
     reduceTo("Medium", "A high injury, suspension, workload or role risk adds uncertainty.");
@@ -400,7 +402,10 @@ function overallVsRosterExplanation(
     const playerRank = recommendation.player.leagueRank ?? recommendation.player.ecr;
     const leaderRank = leader.player.leagueRank ?? leader.player.ecr;
     if (playerRank !== null && leaderRank !== null && playerRank < leaderRank) {
-      return `${recommendation.player.name} is ranked higher overall (#${playerRank} vs. #${leaderRank}), but ${leader.player.name} is the better roster choice because roster-specific effects are ${leaderValues.rosterSpecificEffect.toFixed(1)} vs. ${values.rosterSpecificEffect.toFixed(1)}.`;
+      if (leaderValues.rosterSpecificEffect > values.rosterSpecificEffect) {
+        return `${recommendation.player.name} is ranked higher overall (#${playerRank} vs. #${leaderRank}), but ${leader.player.name} is the better roster choice because roster-specific effects are ${leaderValues.rosterSpecificEffect.toFixed(1)} vs. ${values.rosterSpecificEffect.toFixed(1)}.`;
+      }
+      return `${recommendation.player.name} is ranked higher overall (#${playerRank} vs. #${leaderRank}). ${leader.player.name} does not have a roster-fit edge: roster-specific effects are ${leaderValues.rosterSpecificEffect.toFixed(1)} vs. ${values.rosterSpecificEffect.toFixed(1)}; its lead comes only from player-value model factors.`;
     }
   }
   const higherOverall = recommendations.slice(1).find((candidate) => {
@@ -410,7 +415,10 @@ function overallVsRosterExplanation(
   });
   if (rank === 1 && higherOverall) {
     const otherValues = recommendationValues(higherOverall);
-    return `${higherOverall.player.name} is ranked higher overall, but ${leader.player.name} wins for this roster: roster-specific effects are ${values.rosterSpecificEffect.toFixed(1)} vs. ${otherValues.rosterSpecificEffect.toFixed(1)}.`;
+    if (values.rosterSpecificEffect > otherValues.rosterSpecificEffect) {
+      return `${higherOverall.player.name} is ranked higher overall, but ${leader.player.name} wins for this roster: roster-specific effects are ${values.rosterSpecificEffect.toFixed(1)} vs. ${otherValues.rosterSpecificEffect.toFixed(1)}.`;
+    }
+    return `${higherOverall.player.name} is ranked higher overall. ${leader.player.name} does not have a roster-fit edge: roster-specific effects are ${values.rosterSpecificEffect.toFixed(1)} vs. ${otherValues.rosterSpecificEffect.toFixed(1)}; its lead comes only from player-value model factors.`;
   }
   return `Overall value (${values.overallValue.toFixed(1)}) measures the player independent of your team; roster-specific effects (${values.rosterSpecificEffect >= 0 ? "+" : ""}${values.rosterSpecificEffect.toFixed(1)}) add your open slots, depth, bye/risk concentrations, stacks, opponent demand and saved controls.`;
 }
