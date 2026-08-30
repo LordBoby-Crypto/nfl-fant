@@ -763,21 +763,23 @@ function outcomeRange(
       expected: null,
       ceiling: null,
       spread: null,
+      scoringSpread: null,
     };
   }
   const expertSpread =
     player.expertBest !== null && player.expertWorst !== null
       ? Math.max(0, player.expertWorst - player.expertBest)
       : null;
+  const scoringSpread =
+    0.09 + (risk.risk === "High" ? 0.14 : risk.risk === "Medium" ? 0.07 : 0);
   const volatility =
-    0.09 +
-    bounded((expertSpread ?? 8) / 180, 0.02, 0.16) +
-    (risk.risk === "High" ? 0.14 : risk.risk === "Medium" ? 0.07 : 0);
+    scoringSpread + bounded((expertSpread ?? 8) / 180, 0.02, 0.16);
   return {
     floor: Math.max(0, expected * (1 - volatility)),
     expected,
     ceiling: expected * (1 + volatility * 0.82),
     spread: volatility,
+    scoringSpread,
   };
 }
 
@@ -1139,7 +1141,7 @@ export function recommendPlayers({
           ? -4
           : bounded(
               range.expected * 0.018 -
-                (range.spread ?? 0) * 8,
+                (range.scoringSpread ?? 0) * 8,
               -4,
               10,
             );

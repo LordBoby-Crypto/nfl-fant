@@ -386,6 +386,45 @@ test("expert spread cannot demote the best opening-pick value at pick 1.11", () 
   );
 });
 
+test("expert spread changes confidence range without changing recommendation score", () => {
+  const tightRange = player("tight", "Tight Range", "WR", 8, {
+    expertBest: 6,
+    expertWorst: 10,
+  });
+  const wideRange = player("wide", "Wide Range", "WR", 8, {
+    expertBest: 2,
+    expertWorst: 34,
+  });
+  const teams = buildTeamDraftStates({ draft, users, rosters, picks: [] });
+  const recommendations = recommendPlayers({
+    available: [tightRange, wideRange],
+    allPlayers: [tightRange, wideRange],
+    teams,
+    userRosterId: 2,
+    cursor: getDraftCursor(draft, [], 2),
+    controls: {
+      watchlist: [],
+      queue: [],
+      target: [],
+      sleeper: [],
+      avoid: [],
+    },
+    draft,
+  });
+  const tight = recommendations.find((item) => item.player.id === "tight")!;
+  const wide = recommendations.find((item) => item.player.id === "wide")!;
+
+  assert.equal(tight.score, wide.score);
+  assert.equal(factorScore(tight, "outcome-range"), factorScore(wide, "outcome-range"));
+  assert.equal(factorScore(tight, "expert-agreement"), 0);
+  assert.equal(factorScore(wide, "expert-agreement"), 0);
+  assert.equal(
+    (wide.outcomeRange?.ceiling ?? 0) - (wide.outcomeRange?.floor ?? 0) >
+      (tight.outcomeRange?.ceiling ?? 0) - (tight.outcomeRange?.floor ?? 0),
+    true,
+  );
+});
+
 test("avoided players never re-enter recommendations when the pool is small", () => {
   const smallBoard = board.slice(0, 4);
   const teams = buildTeamDraftStates({ draft, users, rosters, picks: [] });
