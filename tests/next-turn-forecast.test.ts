@@ -3,12 +3,24 @@ import test from "node:test";
 import {
   buildNextTurnForecast,
   compareNextTurnForecast,
+  picksAwayForDisplay,
 } from "../src/features/live-draft/nextTurnForecast.ts";
 import { forecastNextTurnMarket } from "../src/features/live-draft/strategy.ts";
 import type { DraftRecommendation } from "../src/features/live-draft/engine.ts";
 import type { TierBreakWarning } from "../src/features/live-draft/liveIntelligence.ts";
 import type { PlayerIntelligence } from "../src/features/player-intelligence/model.ts";
 import type { Draft, LeagueUser, Roster } from "../src/types.ts";
+
+test("locked-board status falls back to the live cursor distance", () => {
+  assert.equal(
+    picksAwayForDisplay({ simulations: 0, interveningPicks: 0 }, 5),
+    5,
+  );
+  assert.equal(
+    picksAwayForDisplay({ simulations: 240, interveningPicks: 4 }, 5),
+    4,
+  );
+});
 
 function player(
   id: string,

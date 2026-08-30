@@ -28,7 +28,10 @@ import type {
   TeamDraftState,
 } from "./engine.ts";
 import { pickPlayerName, pickPosition } from "./engine.ts";
-import type { NextTurnForecast } from "./nextTurnForecast.ts";
+import {
+  picksAwayForDisplay,
+  type NextTurnForecast,
+} from "./nextTurnForecast.ts";
 import type {
   ProofSourceStatus,
   RecommendationProof,
@@ -403,9 +406,10 @@ export function SimpleDraftMode({
       ? "Refreshing"
       : "Connected";
   const displayedNextPick = forecast.nextUserPick ?? cursor.nextUserPick;
-  const displayedPicksAway = forecast.nextUserPick
-    ? forecast.interveningPicks
-    : cursor.picksUntilUser;
+  const displayedPicksAway = picksAwayForDisplay(
+    forecast,
+    cursor.picksUntilUser,
+  );
 
   return (
     <section className={`simple-draft-mode ${cursor.isUserTurn ? "is-on-clock" : ""}`} aria-label="Simple Draft Mode">
