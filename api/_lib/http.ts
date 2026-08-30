@@ -5,6 +5,7 @@ const DEFAULT_ORIGINS = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
 ];
+const VERCEL_PRODUCTION_ORIGIN = "https://nfl-fant-api.vercel.app";
 const VERCEL_PREVIEW_ORIGIN =
   /^https:\/\/nfl-fant-[a-z0-9-]+-logansai\.vercel\.app$/;
 
@@ -22,7 +23,9 @@ function allowedOrigins() {
 function isAllowedOrigin(origin: string | undefined) {
   return Boolean(
     origin &&
-      (allowedOrigins().has(origin) || VERCEL_PREVIEW_ORIGIN.test(origin)),
+      (origin === VERCEL_PRODUCTION_ORIGIN ||
+        allowedOrigins().has(origin) ||
+        VERCEL_PREVIEW_ORIGIN.test(origin)),
   );
 }
 
