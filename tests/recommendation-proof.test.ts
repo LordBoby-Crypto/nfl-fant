@@ -199,6 +199,31 @@ test("a higher overall-ranked player can lose when roster-specific value is wors
   assert.match(leadProof.alternatives[0].tradeoff, /gives up|gains/);
 });
 
+test("proof never calls tied roster effects a roster-fit advantage", () => {
+  const lowerOverall = recommendation(
+    player("lower", "Lower Overall", 7),
+    [14, 8, 4, 3, 2, 2, 0, 0, 0, 20, 0, 0, 0, 10, 11, 0],
+  );
+  const higherOverall = recommendation(
+    player("higher", "Higher Overall", 6),
+    [12, 9, 4, 3, 2, 2, 0, 0, 0, 20, 0, 0, 0, 10, 11, 0],
+  );
+  const recommendations = [lowerOverall, higherOverall];
+  const fetchedAt = new Date(NOW - 30 * 60_000).toISOString();
+  const proof = buildRecommendationProofs({
+    recommendations,
+    forecast: forecast(recommendations),
+    board: board(recommendations.map((item) => item.player), fetchedAt),
+    leagueFetchedAt: NOW - 60_000,
+    picksFetchedAt: NOW - 5_000,
+    draftStatus: "drafting",
+    now: NOW,
+  }).get(lowerOverall.player.id)!;
+
+  assert.match(proof.overallVsRosterExplanation, /does not have a roster-fit edge/);
+  assert.doesNotMatch(proof.overallVsRosterExplanation, /wins for this roster/);
+});
+
 test("missing, stale and partially modeled inputs visibly reduce confidence", () => {
   const uncertain = recommendation(
     player("uncertain", "Uncertain Player", 20, {

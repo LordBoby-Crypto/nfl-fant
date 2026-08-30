@@ -787,17 +787,23 @@ function expertAgreement(player: PlayerIntelligence) {
       ? Math.max(0, player.expertWorst - player.expertBest)
       : null;
   if (spread === null) {
-    return { score: -2, detail: "Expert range unavailable" };
+    return { score: 0, detail: "Expert range unavailable — confidence only" };
   }
   if (spread <= 8) {
-    return { score: 4, detail: `${spread}-rank expert spread — strong agreement` };
+    return {
+      score: 0,
+      detail: `${spread}-rank expert spread — strong confidence`,
+    };
   }
   if (spread <= 18) {
-    return { score: 0, detail: `${spread}-rank expert spread — normal disagreement` };
+    return {
+      score: 0,
+      detail: `${spread}-rank expert spread — normal confidence`,
+    };
   }
   return {
-    score: -bounded((spread - 18) * 0.35, 3, 12),
-    detail: `${spread}-rank expert spread — volatile evaluation`,
+    score: 0,
+    detail: `${spread}-rank expert spread — low confidence`,
   };
 }
 
@@ -1203,10 +1209,15 @@ export function recommendPlayers({
         },
         {
           key: "expert-agreement",
-          label: "Expert disagreement",
+          label: "Expert range (confidence only)",
           score: agreement.score,
           value: agreement.detail,
-          tone: agreement.score > 0 ? "positive" : agreement.score < 0 ? "warning" : "neutral",
+          tone:
+            player.expertBest === null || player.expertWorst === null
+              ? "warning"
+              : (player.expertWorst - player.expertBest) > 18
+                ? "warning"
+                : "neutral",
         },
         {
           key: "offense-role",
