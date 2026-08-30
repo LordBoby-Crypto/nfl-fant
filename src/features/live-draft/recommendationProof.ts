@@ -291,6 +291,8 @@ function confidenceFor(
   }
   if (recommendation.player.expertBest === null || recommendation.player.expertWorst === null) {
     reduceTo("Medium", "The expert-ranking range is incomplete.");
+  } else if (recommendation.player.expertWorst - recommendation.player.expertBest > 18) {
+    reduceTo("Medium", "The expert-ranking range is wide, which lowers confidence without changing player value.");
   }
   if (recommendation.risk === "High") {
     reduceTo("Medium", "A high injury, suspension, workload or role risk adds uncertainty.");

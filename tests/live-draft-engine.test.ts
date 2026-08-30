@@ -418,6 +418,8 @@ test("expert spread changes confidence range without changing recommendation sco
   assert.equal(factorScore(tight, "outcome-range"), factorScore(wide, "outcome-range"));
   assert.equal(factorScore(tight, "expert-agreement"), 0);
   assert.equal(factorScore(wide, "expert-agreement"), 0);
+  assert.equal(tight.modelConfidence, "High");
+  assert.equal(wide.modelConfidence, "Medium");
   assert.equal(
     (wide.outcomeRange?.ceiling ?? 0) - (wide.outcomeRange?.floor ?? 0) >
       (tight.outcomeRange?.ceiling ?? 0) - (tight.outcomeRange?.floor ?? 0),

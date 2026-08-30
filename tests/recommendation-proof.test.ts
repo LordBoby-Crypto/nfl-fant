@@ -168,6 +168,33 @@ test("proofs reconcile the complete score and separate positive, negative and ne
   assert.equal(proof.sources.every((source) => source.status === "Fresh"), true);
 });
 
+test("wide expert ranges lower displayed confidence without lowering player value", () => {
+  const wide = recommendation(
+    player("wide", "Wide Expert Range", 8, {
+      expertBest: 4,
+      expertWorst: 28,
+    }),
+    [8, 6, 3, 2, 1, 2, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0],
+  );
+  const fetchedAt = new Date(NOW - 30 * 60_000).toISOString();
+  const proof = buildRecommendationProofs({
+    recommendations: [wide],
+    forecast: forecast([wide]),
+    board: board([wide.player], fetchedAt),
+    leagueFetchedAt: NOW - 60_000,
+    picksFetchedAt: NOW - 5_000,
+    draftStatus: "drafting",
+    now: NOW,
+  }).get(wide.player.id)!;
+
+  assert.equal(proof.confidence, "Medium");
+  assert.equal(
+    proof.confidenceReasons.some((reason) => reason.includes("wide")),
+    true,
+  );
+  assert.equal(proof.exactTotal, wide.score);
+});
+
 test("a higher overall-ranked player can lose when roster-specific value is worse", () => {
   const rosterFit = recommendation(
     player("fit", "Roster Fit Star", 5),

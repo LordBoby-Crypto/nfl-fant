@@ -1301,6 +1301,7 @@ export function recommendPlayers({
             : player.scoringConfidence === "medium" ||
                 player.expertBest === null ||
                 player.expertWorst === null ||
+                player.expertWorst - player.expertBest > 18 ||
                 risk === "High"
               ? "Medium"
               : "High",
