@@ -50,6 +50,15 @@ export interface NextTurnForecastChange {
   details: string[];
 }
 
+export function picksAwayForDisplay(
+  forecast: Pick<NextTurnForecast, "interveningPicks" | "simulations">,
+  cursorPicksUntilUser: number | null,
+) {
+  return forecast.simulations > 0
+    ? forecast.interveningPicks
+    : cursorPicksUntilUser;
+}
+
 function tierValue(player: PlayerIntelligence) {
   return player.leagueTier ?? player.tier;
 }
