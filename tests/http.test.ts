@@ -89,6 +89,29 @@ test("CORS allows this project's Vercel previews without allowing other projects
   assert.equal(unrelatedHarness.statusCode, 403);
 });
 
+test("CORS always allows the exact production Vercel app", () => {
+  const harness = responseHarness();
+  const request = {
+    method: "POST",
+    headers: { origin: "https://nfl-fant-api.vercel.app" },
+  } as VercelRequest;
+
+  assert.equal(applyCors(request, harness.response), false);
+  assert.equal(
+    harness.headers.get("access-control-allow-origin"),
+    "https://nfl-fant-api.vercel.app",
+  );
+
+  const lookalikeHarness = responseHarness();
+  const lookalikeRequest = {
+    method: "POST",
+    headers: { origin: "https://nfl-fant-api-evil.vercel.app" },
+  } as VercelRequest;
+
+  assert.equal(applyCors(lookalikeRequest, lookalikeHarness.response), true);
+  assert.equal(lookalikeHarness.statusCode, 403);
+});
+
 test("status cache policy cannot reuse an origin-specific CORS response", () => {
   assert.equal(STATUS_CACHE_CONTROL, "private, no-store");
 });
