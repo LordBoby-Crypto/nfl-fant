@@ -13,6 +13,13 @@ export const NFL_REGULAR_SEASON_START = Date.parse(
   "2026-09-09T20:20:00-04:00",
 );
 
+export function projectionCacheExpiresAt(now: number, ttl: number) {
+  const normalExpiry = now + ttl;
+  return now < NFL_REGULAR_SEASON_START
+    ? Math.min(normalExpiry, NFL_REGULAR_SEASON_START)
+    : normalExpiry;
+}
+
 export type ProviderErrorCode =
   | "provider_access_denied"
   | "provider_rate_limited"
