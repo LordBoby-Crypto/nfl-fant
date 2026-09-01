@@ -13,6 +13,7 @@ import {
   type PlayerBoardData,
 } from "./model";
 import type { LeagueScoringContext } from "./scoring.ts";
+import { warRoomScoringLoadKey } from "./warRoomLoadKey.ts";
 import {
   cachePlayerBoard,
   readCachedPlayerBoard,
@@ -42,6 +43,9 @@ export function useWarRoom(
     () => cachedAtStart?.value ?? null,
   );
   const boardRef = useRef(board);
+  const scoringContextRef = useRef(scoringContext);
+  scoringContextRef.current = scoringContext;
+  const scoringFingerprint = warRoomScoringLoadKey(scoringContext);
   const [weeklyBoard, setWeeklyBoard] = useState<PlayerBoardData | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -141,7 +145,7 @@ export function useWarRoom(
         const nextBoard = buildPlayerBoard(
           responses,
           failures,
-          scoringContext,
+          scoringContextRef.current,
         );
         const hasFreshRankings = responses.some(
           (response) => response.dataset === "rankings",
@@ -182,7 +186,7 @@ export function useWarRoom(
             buildPlayerBoard(
               weeklyResponses,
               weeklyFailures,
-              scoringContext,
+              scoringContextRef.current,
             ),
           );
         } else if (weeklyProjectionWeek) {
@@ -198,14 +202,21 @@ export function useWarRoom(
                 (response) => response.dataset !== "projections",
               ),
               weeklyFailures,
-              scoringContext,
+              scoringContextRef.current,
             ),
           );
         } else {
           setWeeklyBoard(null);
         }
         if (!responses.length) {
-          setDataError("FantasyPros did not return any player data.");
+          setDataError(
+            failures.rankings ??
+              failures.projections ??
+              failures.players ??
+              failures.injuries ??
+              failures.news ??
+              "FantasyPros did not return any player data.",
+          );
         } else if (!nextBoard.players.length) {
           setDataError(
             failures.rankings ??
@@ -230,8 +241,7 @@ export function useWarRoom(
     active,
     lock,
     refreshKey,
-    scoringContext,
-    scoringContext?.fingerprint,
+    scoringFingerprint,
     session,
     weeklyProjectionWeek,
   ]);

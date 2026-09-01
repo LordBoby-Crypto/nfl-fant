@@ -1,8 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { applyCors, requireMethod } from "./_lib/http.js";
 import { hasValidSession } from "./_lib/session.js";
+import {
+  FantasyProsError,
+  fetchFantasyPros,
+  fetchProjectionDataset,
+  fetchRankingDataset,
+} from "./_lib/fantasypros.js";
 
-const API_ROOT = "https://api.fantasypros.com/public/v2/json";
 const SEASON = "2026";
 
 const DATASETS = {
@@ -18,7 +23,7 @@ const DATASETS = {
   },
   injuries: {
     path: "/nfl/injuries",
-    params: { season: SEASON },
+    params: { year: SEASON },
     ttl: 15 * 60 * 1000,
   },
   news: {
@@ -41,27 +46,7 @@ type CacheEntry = {
 };
 
 const cache = new Map<string, CacheEntry>();
-const FANTASY_POSITIONS = [
-  "QB",
-  "RB",
-  "WR",
-  "TE",
-  "K",
-  "DST",
-  "DL",
-  "LB",
-  "DB",
-] as const;
-
-class FantasyProsError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-    this.name = "FantasyProsError";
-  }
-}
+const inFlight = new Map<string, Promise<CacheEntry>>();
 
 function requestedDataset(request: VercelRequest): Dataset | null {
   const value = Array.isArray(request.query.dataset)
@@ -83,84 +68,7 @@ function requestedWeek(request: VercelRequest) {
     : null;
 }
 
-async function fetchFantasyPros(
-  path: string,
-  params: Record<string, string>,
-) {
-  const apiKey = process.env.FANTASYPROS_API_KEY;
-  if (!apiKey) throw new Error("FantasyPros is not configured.");
-
-  const search = new URLSearchParams(params);
-  const url = `${API_ROOT}${path}${search.size ? `?${search}` : ""}`;
-  let upstream: Response | null = null;
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    upstream = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "x-api-key": apiKey,
-      },
-    });
-
-    if (upstream.status !== 429 || attempt === 1) break;
-    const retryAfter = Number(upstream.headers.get("retry-after"));
-    await new Promise((resolve) =>
-      setTimeout(resolve, Number.isFinite(retryAfter) ? retryAfter * 1000 : 1000),
-    );
-  }
-
-  if (!upstream?.ok) {
-    const status = upstream?.status ?? 502;
-    throw new FantasyProsError(`FantasyPros returned ${status}.`, status);
-  }
-
-  return upstream.json() as Promise<unknown>;
-}
-
-async function fetchPositionDataset(
-  dataset: "rankings" | "projections",
-  path: string,
-  params: Record<string, string>,
-) {
-  const results = await Promise.allSettled(
-    FANTASY_POSITIONS.map(async (position) => ({
-      position,
-      value: await fetchFantasyPros(path, {
-        ...params,
-        position,
-      }),
-    })),
-  );
-  const positions: Record<string, unknown> = {};
-  const unavailable: string[] = [];
-
-  results.forEach((result, index) => {
-    if (result.status === "fulfilled") {
-      positions[result.value.position] = result.value.value;
-    } else {
-      unavailable.push(FANTASY_POSITIONS[index]);
-      const reason = result.reason;
-      console.warn(
-        JSON.stringify({
-          level: "warning",
-          message: "FantasyPros position request failed",
-          dataset,
-          position: FANTASY_POSITIONS[index],
-          status: reason instanceof FantasyProsError ? reason.status : null,
-          error: reason instanceof Error ? reason.message : String(reason),
-        }),
-      );
-    }
-  });
-
-  if (!Object.keys(positions).length) {
-    throw new Error(`FantasyPros ${dataset} are temporarily unavailable.`);
-  }
-
-  return { positions, unavailable };
-}
-
-async function fetchDataset(dataset: Dataset, week: number | null) {
+async function loadDataset(dataset: Dataset, week: number | null) {
   const cacheKey =
     dataset === "weekly-projections"
       ? `${dataset}:${week ?? "invalid"}`
@@ -170,8 +78,7 @@ async function fetchDataset(dataset: Dataset, week: number | null) {
 
   if (dataset === "weekly-projections") {
     if (!week) throw new Error("Choose an NFL week from 1 through 18.");
-    const value = await fetchPositionDataset(
-      "projections",
+    const value = await fetchProjectionDataset(
       `/nfl/${SEASON}/projections`,
       { scoring: "PPR", week: String(week) },
     );
@@ -187,9 +94,13 @@ async function fetchDataset(dataset: Dataset, week: number | null) {
   const definition = DATASETS[dataset];
   let value: unknown;
 
-  if (dataset === "rankings" || dataset === "projections") {
-    value = await fetchPositionDataset(
-      dataset,
+  if (dataset === "rankings") {
+    value = await fetchRankingDataset(
+      definition.path,
+      definition.params as Record<string, string>,
+    );
+  } else if (dataset === "projections") {
+    value = await fetchProjectionDataset(
       definition.path,
       definition.params as Record<string, string>,
     );
@@ -207,6 +118,22 @@ async function fetchDataset(dataset: Dataset, week: number | null) {
   };
   cache.set(cacheKey, entry);
   return entry;
+}
+
+async function fetchDataset(dataset: Dataset, week: number | null) {
+  const cacheKey = dataset === "weekly-projections"
+    ? `${dataset}:${week ?? "invalid"}`
+    : dataset;
+  const cached = cache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+  const pending = inFlight.get(cacheKey);
+  if (pending) return pending;
+
+  const request = loadDataset(dataset, week).finally(() => {
+    inFlight.delete(cacheKey);
+  });
+  inFlight.set(cacheKey, request);
+  return request;
 }
 
 export default async function handler(
@@ -282,6 +209,7 @@ export default async function handler(
         error instanceof Error
           ? error.message
           : "The fantasy data provider could not be reached.",
+      ...(error instanceof FantasyProsError ? { code: error.code } : {}),
     });
   }
 }

@@ -536,7 +536,19 @@ function LeagueScoringCoverage({ board }: { board: PlayerBoardData }) {
           </p>
         </div>
       </header>
-      <div className="coverage-counts">
+      {board.scoringCoverageAvailable === false ? (
+        <div className="partial-data-note" role="status">
+          <CircleAlert />
+          <span>
+            <strong>Projection coverage is unavailable</strong>
+            <small>
+              FantasyPros projections did not load, so the War Room cannot
+              honestly classify your scoring rules. Existing ECR order is used
+              until projections recover.
+            </small>
+          </span>
+        </div>
+      ) : <><div className="coverage-counts">
         <span className="is-supported">
           <strong>{board.supportedScoringCategories ?? 0}</strong>
           <small>supported</small>
@@ -574,6 +586,7 @@ function LeagueScoringCoverage({ board }: { board: PlayerBoardData }) {
           <Check /> All active scoring categories have the required projections.
         </p>
       )}
+      </>}
     </section>
   );
 }

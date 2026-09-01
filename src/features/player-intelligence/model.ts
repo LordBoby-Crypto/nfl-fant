@@ -79,6 +79,7 @@ export interface PlayerBoardData {
   supportedScoringCategories?: number;
   partialScoringCategories?: number;
   unsupportedScoringCategories?: number;
+  scoringCoverageAvailable?: boolean;
   scoringFingerprint?: string | null;
 }
 
@@ -379,12 +380,13 @@ export function buildPlayerBoard(
     responses.map((response) => [response.dataset, response] as const),
   );
   const rankingResponse = byDataset.get("rankings");
+  const projectionResponse = byDataset.get("projections");
   const rankingRecords = collectRecords(rankingResponse?.data, ["players", "rankings"]);
   const metadataRecords = collectRecords(byDataset.get("players")?.data, [
     "players",
     "results",
   ]);
-  const projectionRecords = collectRecords(byDataset.get("projections")?.data, [
+  const projectionRecords = collectRecords(projectionResponse?.data, [
     "players",
     "projections",
     "positions",
@@ -501,7 +503,7 @@ export function buildPlayerBoard(
     } satisfies PlayerIntelligence;
   });
 
-  const adjusted = scoringContext
+  const adjusted = scoringContext && projectionResponse
     ? buildLeagueScoringBoard(
       players.map((player) => ({
         id: player.id,
@@ -521,7 +523,7 @@ export function buildPlayerBoard(
     ...(adjustedById.get(player.id) ?? {}),
     tier: adjustedById.get(player.id)?.leagueTier ?? player.tier,
   })).sort((left, right) => {
-    if (scoringContext) {
+    if (adjusted) {
       const leftRank = left.leagueRank ?? Number.MAX_SAFE_INTEGER;
       const rightRank = right.leagueRank ?? Number.MAX_SAFE_INTEGER;
       if (leftRank !== rightRank) return leftRank - rightRank;
@@ -553,6 +555,7 @@ export function buildPlayerBoard(
     supportedScoringCategories: adjusted?.supportedCategories ?? 0,
     partialScoringCategories: adjusted?.partialCategories ?? 0,
     unsupportedScoringCategories: adjusted?.unsupportedCategories ?? 0,
+    scoringCoverageAvailable: Boolean(adjusted),
     scoringFingerprint: scoringContext?.fingerprint ?? null,
   };
 }
