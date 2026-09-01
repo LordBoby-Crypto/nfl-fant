@@ -4,6 +4,7 @@ import {
   FANTASY_RANKING_POSITIONS,
   fetchProjectionDataset,
   fetchRankingDataset,
+  fetchSeasonProjectionDataset,
 } from "../api/_lib/fantasypros.ts";
 import { warRoomScoringLoadKey } from "../src/features/player-intelligence/warRoomLoadKey.ts";
 
@@ -54,6 +55,63 @@ test("projections use one documented combined-position request", async () => {
   assert.equal(urls.length, 1);
   const url = new URL(urls[0]);
   assert.equal(url.searchParams.get("positions"), "QB:RB:WR:TE:K:DST:DL:LB:DB");
+});
+
+test("season projections request the documented preseason week before ROS", async () => {
+  process.env.FANTASYPROS_API_KEY = "test-key";
+  const urls: string[] = [];
+  globalThis.fetch = (async (input) => {
+    urls.push(String(input));
+    return new Response(
+      JSON.stringify({ players: [{ fpid: "1", name: "Test Player" }] }),
+      { status: 200 },
+    );
+  }) as typeof fetch;
+
+  await fetchSeasonProjectionDataset("/nfl/2026/projections", {
+    scoring: "PPR",
+  });
+
+  assert.equal(urls.length, 1);
+  const url = new URL(urls[0]);
+  assert.equal(url.searchParams.get("week"), "0");
+  assert.equal(url.searchParams.has("ros"), false);
+});
+
+test("empty preseason projections fall back to rest-of-season projections", async () => {
+  process.env.FANTASYPROS_API_KEY = "test-key";
+  const urls: string[] = [];
+  globalThis.fetch = (async (input) => {
+    urls.push(String(input));
+    const url = new URL(String(input));
+    const players = url.searchParams.get("week") === "0"
+      ? []
+      : [{ fpid: "1", name: "Test Player" }];
+    return new Response(JSON.stringify({ players }), { status: 200 });
+  }) as typeof fetch;
+
+  await fetchSeasonProjectionDataset("/nfl/2026/projections", {
+    scoring: "PPR",
+  });
+
+  assert.equal(urls.length, 2);
+  assert.equal(new URL(urls[0]).searchParams.get("week"), "0");
+  assert.equal(new URL(urls[1]).searchParams.get("ros"), "true");
+});
+
+test("empty preseason and ROS projection responses are rejected", async () => {
+  process.env.FANTASYPROS_API_KEY = "test-key";
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ players: [] }), { status: 200 });
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => fetchSeasonProjectionDataset("/nfl/2026/projections", { scoring: "PPR" }),
+    /no 2026 preseason or rest-of-season projections/,
+  );
+  assert.equal(calls, 2);
 });
 
 test("production API-key rejection is classified without exposing the key", async () => {
