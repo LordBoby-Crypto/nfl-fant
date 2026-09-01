@@ -542,9 +542,8 @@ function LeagueScoringCoverage({ board }: { board: PlayerBoardData }) {
           <span>
             <strong>Projection coverage is unavailable</strong>
             <small>
-              FantasyPros projections did not load, so the War Room cannot
-              honestly classify your scoring rules. Existing ECR order is used
-              until projections recover.
+              {board.datasetErrors.projections ??
+                "FantasyPros projections did not load, so the War Room cannot honestly classify your scoring rules. Existing ECR order is used until projections recover."}
             </small>
           </span>
         </div>
