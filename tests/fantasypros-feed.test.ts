@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   FANTASY_RANKING_POSITIONS,
+  NFL_REGULAR_SEASON_START,
   fetchProjectionDataset,
   fetchRankingDataset,
   fetchSeasonProjectionDataset,
@@ -70,7 +71,7 @@ test("season projections request the documented preseason week before ROS", asyn
 
   await fetchSeasonProjectionDataset("/nfl/2026/projections", {
     scoring: "PPR",
-  });
+  }, Date.parse("2026-09-01T12:00:00Z"));
 
   assert.equal(urls.length, 1);
   const url = new URL(urls[0]);
@@ -92,7 +93,7 @@ test("empty preseason projections fall back to rest-of-season projections", asyn
 
   await fetchSeasonProjectionDataset("/nfl/2026/projections", {
     scoring: "PPR",
-  });
+  }, Date.parse("2026-09-01T12:00:00Z"));
 
   assert.equal(urls.length, 2);
   assert.equal(new URL(urls[0]).searchParams.get("week"), "0");
@@ -112,6 +113,29 @@ test("empty preseason and ROS projection responses are rejected", async () => {
     /no 2026 preseason or rest-of-season projections/,
   );
   assert.equal(calls, 2);
+});
+
+test("regular-season consumers prefer ROS projections before the preseason fallback", async () => {
+  process.env.FANTASYPROS_API_KEY = "test-key";
+  const urls: string[] = [];
+  globalThis.fetch = (async (input) => {
+    urls.push(String(input));
+    return new Response(
+      JSON.stringify({ players: [{ fpid: "1", name: "Test Player" }] }),
+      { status: 200 },
+    );
+  }) as typeof fetch;
+
+  await fetchSeasonProjectionDataset(
+    "/nfl/2026/projections",
+    { scoring: "PPR" },
+    NFL_REGULAR_SEASON_START + 1,
+  );
+
+  assert.equal(urls.length, 1);
+  const url = new URL(urls[0]);
+  assert.equal(url.searchParams.get("ros"), "true");
+  assert.equal(url.searchParams.has("week"), false);
 });
 
 test("production API-key rejection is classified without exposing the key", async () => {
