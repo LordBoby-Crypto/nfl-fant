@@ -6,6 +6,7 @@ import {
   fetchProjectionDataset,
   fetchRankingDataset,
   fetchSeasonProjectionDataset,
+  projectionCacheExpiresAt,
 } from "../api/_lib/fantasypros.ts";
 import { warRoomScoringLoadKey } from "../src/features/player-intelligence/warRoomLoadKey.ts";
 
@@ -136,6 +137,21 @@ test("regular-season consumers prefer ROS projections before the preseason fallb
   const url = new URL(urls[0]);
   assert.equal(url.searchParams.get("ros"), "true");
   assert.equal(url.searchParams.has("week"), false);
+});
+
+test("preseason projection cache cannot cross the regular-season boundary", () => {
+  const sixHours = 6 * 60 * 60 * 1_000;
+  const oneHourBeforeKickoff = NFL_REGULAR_SEASON_START - 60 * 60 * 1_000;
+  assert.equal(
+    projectionCacheExpiresAt(oneHourBeforeKickoff, sixHours),
+    NFL_REGULAR_SEASON_START,
+  );
+
+  const oneHourAfterKickoff = NFL_REGULAR_SEASON_START + 60 * 60 * 1_000;
+  assert.equal(
+    projectionCacheExpiresAt(oneHourAfterKickoff, sixHours),
+    oneHourAfterKickoff + sixHours,
+  );
 });
 
 test("production API-key rejection is classified without exposing the key", async () => {
