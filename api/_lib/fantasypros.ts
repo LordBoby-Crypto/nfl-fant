@@ -52,6 +52,7 @@ function providerError(status: number) {
 export async function fetchFantasyPros(
   path: string,
   params: Record<string, string>,
+  retryBudget = { remaining: 2 },
 ) {
   const apiKey = process.env.FANTASYPROS_API_KEY;
   if (!apiKey) throw new Error("FantasyPros is not configured.");
@@ -60,7 +61,7 @@ export async function fetchFantasyPros(
   const url = `${API_ROOT}${path}${search.size ? `?${search}` : ""}`;
   let upstream: Response | null = null;
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; ; attempt += 1) {
     upstream = await fetch(url, {
       headers: {
         Accept: "application/json",
@@ -68,14 +69,15 @@ export async function fetchFantasyPros(
       },
     });
 
-    if (upstream.status !== 429 || attempt === 2) break;
+    if (upstream.status !== 429 || retryBudget.remaining <= 0) break;
+    retryBudget.remaining -= 1;
     const retryAfter = Number(upstream.headers.get("retry-after"));
-    const backoff = 1_000 * 2 ** attempt;
+    const backoff = 250 * 2 ** attempt;
     await new Promise((resolve) =>
       setTimeout(
         resolve,
         Number.isFinite(retryAfter)
-          ? Math.min(10_000, Math.max(backoff, retryAfter * 1_000))
+          ? Math.min(2_000, Math.max(backoff, retryAfter * 1_000))
           : backoff,
       ),
     );
@@ -93,14 +95,23 @@ export async function fetchRankingDataset(
   params: Record<string, string>,
 ) {
   const results: PromiseSettledResult<{ position: string; value: unknown }>[] = [];
+  const retryBudget = { remaining: 2 };
   for (let index = 0; index < FANTASY_RANKING_POSITIONS.length; index += 2) {
     const batch = FANTASY_RANKING_POSITIONS.slice(index, index + 2);
-    results.push(...await Promise.allSettled(
+    const batchResults = await Promise.allSettled(
       batch.map(async (position) => ({
         position,
-        value: await fetchFantasyPros(path, { ...params, position }),
+        value: await fetchFantasyPros(path, { ...params, position }, retryBudget),
       })),
-    ));
+    );
+    results.push(...batchResults);
+    const providerWideRateLimit = batchResults.every(
+      (result) =>
+        result.status === "rejected" &&
+        result.reason instanceof FantasyProsError &&
+        result.reason.code === "provider_rate_limited",
+    );
+    if (providerWideRateLimit) break;
   }
   const positions: Record<string, unknown> = {};
   const unavailable: string[] = [];

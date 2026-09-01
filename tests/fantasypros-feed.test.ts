@@ -72,6 +72,24 @@ test("production API-key rejection is classified without exposing the key", asyn
   );
 });
 
+test("provider-wide ranking rate limits share one retry budget and stop later batches", async () => {
+  process.env.FANTASYPROS_API_KEY = "test-key";
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ message: "rate limited" }), {
+      status: 429,
+      headers: { "retry-after": "0" },
+    });
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => fetchRankingDataset("/nfl/2026/consensus-rankings", { scoring: "PPR" }),
+    /rate limit reached/,
+  );
+  assert.equal(calls, 4);
+});
+
 test("equivalent Sleeper refresh objects keep the same FantasyPros load key", () => {
   const first = { fingerprint: "league-settings-v1" } as never;
   const refreshed = { fingerprint: "league-settings-v1" } as never;
