@@ -1,0 +1,100 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  FANTASY_RANKING_POSITIONS,
+  fetchProjectionDataset,
+  fetchRankingDataset,
+} from "../api/_lib/fantasypros.ts";
+import { warRoomScoringLoadKey } from "../src/features/player-intelligence/warRoomLoadKey.ts";
+
+const originalFetch = globalThis.fetch;
+const originalApiKey = process.env.FANTASYPROS_API_KEY;
+
+test.afterEach(() => {
+  globalThis.fetch = originalFetch;
+  if (originalApiKey === undefined) delete process.env.FANTASYPROS_API_KEY;
+  else process.env.FANTASYPROS_API_KEY = originalApiKey;
+});
+
+test("rankings use only documented FantasyPros positions with at most two concurrent requests", async () => {
+  process.env.FANTASYPROS_API_KEY = "test-key";
+  const urls: string[] = [];
+  let active = 0;
+  let maximumActive = 0;
+  globalThis.fetch = (async (input) => {
+    urls.push(String(input));
+    active += 1;
+    maximumActive = Math.max(maximumActive, active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    active -= 1;
+    return new Response(JSON.stringify({ players: [] }), { status: 200 });
+  }) as typeof fetch;
+
+  await fetchRankingDataset("/nfl/2026/consensus-rankings", { scoring: "PPR" });
+
+  assert.deepEqual(FANTASY_RANKING_POSITIONS, ["QB", "RB", "WR", "TE", "K", "DST"]);
+  assert.equal(urls.length, 6);
+  assert.equal(urls.some((url) => /position=(DL|LB|DB)/.test(url)), false);
+  assert.ok(maximumActive <= 2);
+});
+
+test("projections use one documented combined-position request", async () => {
+  process.env.FANTASYPROS_API_KEY = "test-key";
+  const urls: string[] = [];
+  globalThis.fetch = (async (input) => {
+    urls.push(String(input));
+    return new Response(JSON.stringify({ players: [] }), { status: 200 });
+  }) as typeof fetch;
+
+  await fetchProjectionDataset("/nfl/2026/projections", {
+    scoring: "PPR",
+    ros: "true",
+  });
+
+  assert.equal(urls.length, 1);
+  const url = new URL(urls[0]);
+  assert.equal(url.searchParams.get("positions"), "QB:RB:WR:TE:K:DST:DL:LB:DB");
+});
+
+test("production API-key rejection is classified without exposing the key", async () => {
+  process.env.FANTASYPROS_API_KEY = "never-expose-this";
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ message: "forbidden" }), { status: 403 })) as typeof fetch;
+
+  await assert.rejects(
+    () => fetchProjectionDataset("/nfl/2026/projections", { scoring: "PPR" }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /production API key/);
+      assert.doesNotMatch(error.message, /never-expose-this/);
+      return true;
+    },
+  );
+});
+
+test("provider-wide ranking rate limits share one retry budget and stop later batches", async () => {
+  process.env.FANTASYPROS_API_KEY = "test-key";
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ message: "rate limited" }), {
+      status: 429,
+      headers: { "retry-after": "0" },
+    });
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => fetchRankingDataset("/nfl/2026/consensus-rankings", { scoring: "PPR" }),
+    /rate limit reached/,
+  );
+  assert.equal(calls, 4);
+});
+
+test("equivalent Sleeper refresh objects keep the same FantasyPros load key", () => {
+  const first = { fingerprint: "league-settings-v1" } as never;
+  const refreshed = { fingerprint: "league-settings-v1" } as never;
+  const changed = { fingerprint: "league-settings-v2" } as never;
+
+  assert.equal(warRoomScoringLoadKey(first), warRoomScoringLoadKey(refreshed));
+  assert.notEqual(warRoomScoringLoadKey(first), warRoomScoringLoadKey(changed));
+});
