@@ -157,3 +157,53 @@ export async function fetchProjectionDataset(
   });
   return { positions: { combined: value }, unavailable: [] };
 }
+
+function projectionPlayerCount(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
+  const players = (value as Record<string, unknown>).players;
+  return Array.isArray(players) ? players.length : 0;
+}
+
+export async function fetchSeasonProjectionDataset(
+  path: string,
+  params: Record<string, string>,
+) {
+  const retryBudget = { remaining: 2 };
+  const baseParams = { ...params };
+  delete baseParams.week;
+  delete baseParams.ros;
+
+  const attempts = [
+    { mode: "preseason", params: { ...baseParams, week: "0" } },
+    { mode: "rest-of-season", params: { ...baseParams, ros: "true" } },
+  ] as const;
+
+  for (const attempt of attempts) {
+    const value = await fetchFantasyPros(
+      path,
+      {
+        ...attempt.params,
+        positions: FANTASY_PROJECTION_POSITIONS,
+      },
+      retryBudget,
+    );
+    const playerCount = projectionPlayerCount(value);
+    console.log(
+      JSON.stringify({
+        level: "info",
+        message: "FantasyPros projection response received",
+        mode: attempt.mode,
+        playerCount,
+      }),
+    );
+    if (playerCount > 0) {
+      return { positions: { combined: value }, unavailable: [] };
+    }
+  }
+
+  throw new FantasyProsError(
+    "FantasyPros returned no 2026 preseason or rest-of-season projections.",
+    200,
+    "provider_unavailable",
+  );
+}

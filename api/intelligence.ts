@@ -6,6 +6,7 @@ import {
   fetchFantasyPros,
   fetchProjectionDataset,
   fetchRankingDataset,
+  fetchSeasonProjectionDataset,
 } from "./_lib/fantasypros.js";
 
 const SEASON = "2026";
@@ -18,7 +19,7 @@ const DATASETS = {
   },
   projections: {
     path: `/nfl/${SEASON}/projections`,
-    params: { scoring: "PPR", ros: "true" },
+    params: { scoring: "PPR" },
     ttl: 6 * 60 * 60 * 1000,
   },
   injuries: {
@@ -100,7 +101,7 @@ async function loadDataset(dataset: Dataset, week: number | null) {
       definition.params as Record<string, string>,
     );
   } else if (dataset === "projections") {
-    value = await fetchProjectionDataset(
+    value = await fetchSeasonProjectionDataset(
       definition.path,
       definition.params as Record<string, string>,
     );
