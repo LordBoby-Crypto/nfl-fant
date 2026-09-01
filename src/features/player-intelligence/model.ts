@@ -503,7 +503,13 @@ export function buildPlayerBoard(
     } satisfies PlayerIntelligence;
   });
 
-  const adjusted = scoringContext && projectionResponse
+  const hasUsableProjections = Boolean(
+    projectionResponse && players.some((player) =>
+      Object.keys(player.projectionStats ?? {}).length > 0 ||
+      player.providerProjectedPoints !== null
+    ),
+  );
+  const adjusted = scoringContext && hasUsableProjections
     ? buildLeagueScoringBoard(
       players.map((player) => ({
         id: player.id,

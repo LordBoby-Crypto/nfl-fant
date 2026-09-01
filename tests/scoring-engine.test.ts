@@ -423,3 +423,57 @@ test("missing FantasyPros projections preserve ECR order and mark scoring covera
   assert.equal(board.scoringCategories?.length, 0);
   assert.equal(board.unsupportedScoringCategories, 0);
 });
+
+test("empty or unmatched projection envelopes do not masquerade as scoring coverage", () => {
+  const rankings = {
+    dataset: "rankings" as const,
+    fetchedAt: "2026-09-01T22:00:00Z",
+    attribution: "Data obtained from FantasyPros.",
+    data: {
+      players: [
+        {
+          player_id: "ranked-1",
+          player_name: "Ranked Player",
+          player_position_id: "RB",
+          rank_ecr: 1,
+        },
+      ],
+    },
+  };
+  const scoring = {
+    ...context({ rush_yd: 0.1, rush_td: 6 }),
+    fingerprint: "coverage-envelope-test",
+  };
+  const projectionPayloads = [
+    { players: [] },
+    {
+      players: [
+        {
+          fpid: "different-player",
+          name: "Unmatched Player",
+          position_id: "RB",
+          stats: [{ rush_yds: 1_000, rush_tds: 10 }],
+        },
+      ],
+    },
+  ];
+
+  for (const data of projectionPayloads) {
+    const board = buildPlayerBoard(
+      [
+        rankings,
+        {
+          dataset: "projections",
+          fetchedAt: "2026-09-01T22:00:00Z",
+          attribution: "Data obtained from FantasyPros.",
+          data,
+        },
+      ],
+      {},
+      scoring,
+    );
+    assert.equal(board.scoringCoverageAvailable, false);
+    assert.equal(board.unsupportedScoringCategories, 0);
+    assert.equal(board.players[0]?.leagueRank, undefined);
+  }
+});
