@@ -9,6 +9,9 @@ export const FANTASY_RANKING_POSITIONS = [
   "DST",
 ] as const;
 const FANTASY_PROJECTION_POSITIONS = "QB:RB:WR:TE:K:DST:DL:LB:DB";
+export const NFL_REGULAR_SEASON_START = Date.parse(
+  "2026-09-09T20:20:00-04:00",
+);
 
 export type ProviderErrorCode =
   | "provider_access_denied"
@@ -167,16 +170,24 @@ function projectionPlayerCount(value: unknown) {
 export async function fetchSeasonProjectionDataset(
   path: string,
   params: Record<string, string>,
+  now = Date.now(),
 ) {
   const retryBudget = { remaining: 2 };
   const baseParams = { ...params };
   delete baseParams.week;
   delete baseParams.ros;
 
-  const attempts = [
-    { mode: "preseason", params: { ...baseParams, week: "0" } },
-    { mode: "rest-of-season", params: { ...baseParams, ros: "true" } },
-  ] as const;
+  const preseason = {
+    mode: "preseason",
+    params: { ...baseParams, week: "0" },
+  } as const;
+  const restOfSeason = {
+    mode: "rest-of-season",
+    params: { ...baseParams, ros: "true" },
+  } as const;
+  const attempts = now >= NFL_REGULAR_SEASON_START
+    ? [restOfSeason, preseason]
+    : [preseason, restOfSeason];
 
   for (const attempt of attempts) {
     const value = await fetchFantasyPros(
