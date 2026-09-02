@@ -12,18 +12,22 @@ const FANTASY_PROJECTION_POSITIONS = "QB:RB:WR:TE:K:DST:DL:LB:DB";
 export const NFL_REGULAR_SEASON_START = Date.parse(
   "2026-09-09T20:20:00-04:00",
 );
+export const PROJECTION_FALLBACK_TTL = 15 * 60 * 1_000;
 
 export type ProjectionMode = "preseason" | "rest-of-season";
 
 export function projectionCacheExpiresAt(
-  now: number,
+  completedAt: number,
   ttl: number,
   mode: ProjectionMode,
+  selectedAt: number,
 ) {
-  const normalExpiry = now + ttl;
-  return mode === "preseason"
-    ? Math.min(normalExpiry, NFL_REGULAR_SEASON_START)
-    : normalExpiry;
+  const normalExpiry = completedAt + ttl;
+  if (mode !== "preseason") return normalExpiry;
+  if (selectedAt < NFL_REGULAR_SEASON_START) {
+    return Math.min(normalExpiry, NFL_REGULAR_SEASON_START);
+  }
+  return Math.min(normalExpiry, completedAt + PROJECTION_FALLBACK_TTL);
 }
 
 export type ProviderErrorCode =
@@ -225,6 +229,7 @@ export async function fetchSeasonProjectionDataset(
         positions: { combined: value },
         unavailable: [],
         mode: attempt.mode,
+        selectedAt: now,
       };
     }
   }

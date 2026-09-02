@@ -121,9 +121,19 @@ async function loadDataset(dataset: Dataset, week: number | null) {
         (value as Record<string, unknown>).mode === "rest-of-season")
     ? (value as { mode: ProjectionMode }).mode
     : "rest-of-season";
+  const projectionSelectedAt = dataset === "projections" &&
+      value && typeof value === "object" && !Array.isArray(value) &&
+      typeof (value as Record<string, unknown>).selectedAt === "number"
+    ? (value as { selectedAt: number }).selectedAt
+    : cachedAt;
   const entry: CacheEntry = {
     expiresAt: dataset === "projections"
-      ? projectionCacheExpiresAt(cachedAt, definition.ttl, projectionMode)
+      ? projectionCacheExpiresAt(
+          cachedAt,
+          definition.ttl,
+          projectionMode,
+          projectionSelectedAt,
+        )
       : cachedAt + definition.ttl,
     fetchedAt: new Date().toISOString(),
     value,
