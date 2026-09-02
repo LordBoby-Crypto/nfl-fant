@@ -7,6 +7,7 @@ import {
   fetchProjectionDataset,
   fetchRankingDataset,
   fetchSeasonProjectionDataset,
+  projectionCacheExpiresAt,
 } from "./_lib/fantasypros.js";
 
 const SEASON = "2026";
@@ -112,8 +113,11 @@ async function loadDataset(dataset: Dataset, week: number | null) {
     );
   }
 
+  const cachedAt = Date.now();
   const entry: CacheEntry = {
-    expiresAt: Date.now() + definition.ttl,
+    expiresAt: dataset === "projections"
+      ? projectionCacheExpiresAt(cachedAt, definition.ttl)
+      : cachedAt + definition.ttl,
     fetchedAt: new Date().toISOString(),
     value,
   };
