@@ -13,9 +13,15 @@ export const NFL_REGULAR_SEASON_START = Date.parse(
   "2026-09-09T20:20:00-04:00",
 );
 
-export function projectionCacheExpiresAt(now: number, ttl: number) {
+export type ProjectionMode = "preseason" | "rest-of-season";
+
+export function projectionCacheExpiresAt(
+  now: number,
+  ttl: number,
+  mode: ProjectionMode,
+) {
   const normalExpiry = now + ttl;
-  return now < NFL_REGULAR_SEASON_START
+  return mode === "preseason"
     ? Math.min(normalExpiry, NFL_REGULAR_SEASON_START)
     : normalExpiry;
 }
@@ -215,7 +221,11 @@ export async function fetchSeasonProjectionDataset(
       }),
     );
     if (playerCount > 0) {
-      return { positions: { combined: value }, unavailable: [] };
+      return {
+        positions: { combined: value },
+        unavailable: [],
+        mode: attempt.mode,
+      };
     }
   }
 
