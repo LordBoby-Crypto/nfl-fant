@@ -8,6 +8,7 @@ import {
   fetchRankingDataset,
   fetchSeasonProjectionDataset,
   projectionCacheExpiresAt,
+  type ProjectionMode,
 } from "./_lib/fantasypros.js";
 
 const SEASON = "2026";
@@ -114,9 +115,15 @@ async function loadDataset(dataset: Dataset, week: number | null) {
   }
 
   const cachedAt = Date.now();
+  const projectionMode = dataset === "projections" &&
+      value && typeof value === "object" && !Array.isArray(value) &&
+      ((value as Record<string, unknown>).mode === "preseason" ||
+        (value as Record<string, unknown>).mode === "rest-of-season")
+    ? (value as { mode: ProjectionMode }).mode
+    : "rest-of-season";
   const entry: CacheEntry = {
     expiresAt: dataset === "projections"
-      ? projectionCacheExpiresAt(cachedAt, definition.ttl)
+      ? projectionCacheExpiresAt(cachedAt, definition.ttl, projectionMode)
       : cachedAt + definition.ttl,
     fetchedAt: new Date().toISOString(),
     value,
