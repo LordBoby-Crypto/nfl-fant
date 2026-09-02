@@ -143,14 +143,23 @@ test("preseason projection cache cannot cross the regular-season boundary", () =
   const sixHours = 6 * 60 * 60 * 1_000;
   const oneHourBeforeKickoff = NFL_REGULAR_SEASON_START - 60 * 60 * 1_000;
   assert.equal(
-    projectionCacheExpiresAt(oneHourBeforeKickoff, sixHours),
+    projectionCacheExpiresAt(oneHourBeforeKickoff, sixHours, "preseason"),
     NFL_REGULAR_SEASON_START,
   );
 
   const oneHourAfterKickoff = NFL_REGULAR_SEASON_START + 60 * 60 * 1_000;
   assert.equal(
-    projectionCacheExpiresAt(oneHourAfterKickoff, sixHours),
+    projectionCacheExpiresAt(oneHourAfterKickoff, sixHours, "rest-of-season"),
     oneHourAfterKickoff + sixHours,
+  );
+});
+
+test("a preseason response completed after kickoff expires immediately", () => {
+  const sixHours = 6 * 60 * 60 * 1_000;
+  const completedAfterKickoff = NFL_REGULAR_SEASON_START + 1_000;
+  assert.equal(
+    projectionCacheExpiresAt(completedAfterKickoff, sixHours, "preseason"),
+    NFL_REGULAR_SEASON_START,
   );
 });
 
