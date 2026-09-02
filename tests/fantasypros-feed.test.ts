@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   FANTASY_RANKING_POSITIONS,
   NFL_REGULAR_SEASON_START,
+  PROJECTION_FALLBACK_TTL,
   fetchProjectionDataset,
   fetchRankingDataset,
   fetchSeasonProjectionDataset,
@@ -143,13 +144,23 @@ test("preseason projection cache cannot cross the regular-season boundary", () =
   const sixHours = 6 * 60 * 60 * 1_000;
   const oneHourBeforeKickoff = NFL_REGULAR_SEASON_START - 60 * 60 * 1_000;
   assert.equal(
-    projectionCacheExpiresAt(oneHourBeforeKickoff, sixHours, "preseason"),
+    projectionCacheExpiresAt(
+      oneHourBeforeKickoff,
+      sixHours,
+      "preseason",
+      oneHourBeforeKickoff,
+    ),
     NFL_REGULAR_SEASON_START,
   );
 
   const oneHourAfterKickoff = NFL_REGULAR_SEASON_START + 60 * 60 * 1_000;
   assert.equal(
-    projectionCacheExpiresAt(oneHourAfterKickoff, sixHours, "rest-of-season"),
+    projectionCacheExpiresAt(
+      oneHourAfterKickoff,
+      sixHours,
+      "rest-of-season",
+      oneHourAfterKickoff,
+    ),
     oneHourAfterKickoff + sixHours,
   );
 });
@@ -157,9 +168,30 @@ test("preseason projection cache cannot cross the regular-season boundary", () =
 test("a preseason response completed after kickoff expires immediately", () => {
   const sixHours = 6 * 60 * 60 * 1_000;
   const completedAfterKickoff = NFL_REGULAR_SEASON_START + 1_000;
+  const selectedBeforeKickoff = NFL_REGULAR_SEASON_START - 1_000;
   assert.equal(
-    projectionCacheExpiresAt(completedAfterKickoff, sixHours, "preseason"),
+    projectionCacheExpiresAt(
+      completedAfterKickoff,
+      sixHours,
+      "preseason",
+      selectedBeforeKickoff,
+    ),
     NFL_REGULAR_SEASON_START,
+  );
+});
+
+test("post-kickoff preseason fallback uses a short positive retry TTL", () => {
+  const sixHours = 6 * 60 * 60 * 1_000;
+  const selectedAfterKickoff = NFL_REGULAR_SEASON_START + 1_000;
+  const completedAt = selectedAfterKickoff + 2_000;
+  assert.equal(
+    projectionCacheExpiresAt(
+      completedAt,
+      sixHours,
+      "preseason",
+      selectedAfterKickoff,
+    ),
+    completedAt + PROJECTION_FALLBACK_TTL,
   );
 });
 
