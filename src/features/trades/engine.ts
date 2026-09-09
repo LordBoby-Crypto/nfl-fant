@@ -138,10 +138,10 @@ function tradeAssetValue(player: TeamPlayer) {
       ? null
       : clamp(player.projectedPoints / 4, 0, 100);
   const market =
-    player.ecr === null ? null : clamp(102 - player.ecr * 0.48, 0, 100);
+    player.ecr === null ? null : clamp(108 - player.ecr * 0.72, 0, 100);
   const base =
     projection !== null && market !== null
-      ? projection * 0.66 + market * 0.34
+      ? projection * 0.35 + market * 0.65
       : projection ?? market ?? 35;
   const injury = player.reserve
     ? 30
@@ -163,10 +163,135 @@ function packageValue(players: TeamPlayer[]) {
   return round(
     ordered.reduce(
       (sum, value, index) =>
-        sum + value * (index === 0 ? 1 : Math.max(0.2, 0.45 - (index - 1) * 0.12)),
+        sum + value * (index === 0 ? 1 : Math.max(0.15, 0.28 - (index - 1) * 0.08)),
       0,
     ),
   );
+}
+
+export interface AutomaticTradeMarketCheck {
+  eligible: boolean;
+  fairnessScore: number;
+  userNetValue: number;
+  partnerNetValue: number;
+  reasons: string[];
+}
+
+function bestAsset(players: TeamPlayer[]) {
+  return [...players].sort(
+    (left, right) => tradeAssetValue(right) - tradeAssetValue(left),
+  )[0];
+}
+
+function isCornerstone(player: TeamPlayer | undefined) {
+  if (!player) return false;
+  return (
+    (player.ecr !== null && player.ecr <= 36) ||
+    tradeAssetValue(player) >= 82
+  );
+}
+
+function packageAfterCut(players: TeamPlayer[], cuts: TeamPlayer[]) {
+  return round(
+    Math.max(0, packageValue(players) - packageValue(cuts) * 0.5),
+  );
+}
+
+/** Conservative market gate used before an automatic offer may be recommended. */
+export function assessAutomaticTradeMarket({
+  userSends,
+  partnerSends,
+  userDrops = [],
+  partnerDrops = [],
+}: {
+  userSends: TeamPlayer[];
+  partnerSends: TeamPlayer[];
+  userDrops?: TeamPlayer[];
+  partnerDrops?: TeamPlayer[];
+}): AutomaticTradeMarketCheck {
+  const userNetValue = packageAfterCut(userSends, partnerDrops);
+  const partnerNetValue = packageAfterCut(partnerSends, userDrops);
+  const largerValue = Math.max(userNetValue, partnerNetValue, 1);
+  const valueGapPercent =
+    (Math.abs(userNetValue - partnerNetValue) / largerValue) * 100;
+  const fairnessScore = Math.round(clamp(100 - valueGapPercent * 1.8, 0, 100));
+  const reasons: string[] = [];
+
+  if (userSends.length === 1 && partnerSends.length === 1) {
+    const [userPlayer] = userSends;
+    const [partnerPlayer] = partnerSends;
+    if (
+      userPlayer.ecr !== null &&
+      partnerPlayer.ecr !== null &&
+      Math.abs(userPlayer.ecr - partnerPlayer.ecr) > 24
+    ) {
+      reasons.push(
+        "The one-for-one ECR gap is too large for roster fit to justify.",
+      );
+    }
+    if (
+      Math.abs(tradeAssetValue(userPlayer) - tradeAssetValue(partnerPlayer)) >
+      12
+    ) {
+      reasons.push("The one-for-one market-value gap is too large.");
+    }
+  }
+
+  const protectCornerstone = (
+    outgoing: TeamPlayer[],
+    incoming: TeamPlayer[],
+    incomingNetValue: number,
+    outgoingNetValue: number,
+  ) => {
+    if (outgoing.length !== 1 || incoming.length < 2) return;
+    const cornerstone = outgoing[0];
+    if (!isCornerstone(cornerstone)) return;
+    const centerpiece = bestAsset(incoming);
+    const rankGap =
+      cornerstone.ecr !== null && centerpiece?.ecr !== null
+        ? centerpiece.ecr - cornerstone.ecr
+        : null;
+    if (
+      !centerpiece ||
+      tradeAssetValue(centerpiece) < tradeAssetValue(cornerstone) * 0.9 ||
+      (rankGap !== null && rankGap > 8)
+    ) {
+      reasons.push(
+        `${cornerstone.name} is a cornerstone; the package lacks a comparable centerpiece.`,
+      );
+    }
+    if (incomingNetValue < outgoingNetValue * 1.1) {
+      reasons.push(
+        `${cornerstone.name} requires at least a 10% consolidation premium after any roster cut.`,
+      );
+    }
+  };
+
+  protectCornerstone(
+    userSends,
+    partnerSends,
+    partnerNetValue,
+    userNetValue,
+  );
+  protectCornerstone(
+    partnerSends,
+    userSends,
+    userNetValue,
+    partnerNetValue,
+  );
+  if (fairnessScore < 64) {
+    reasons.push(
+      "The net market-value gap is too large for an automatic recommendation.",
+    );
+  }
+
+  return {
+    eligible: reasons.length === 0,
+    fairnessScore,
+    userNetValue,
+    partnerNetValue,
+    reasons,
+  };
 }
 
 function weaknessPositions(team: TeamAnalysis) {
@@ -501,6 +626,14 @@ function analyzeTradeWithLeague({
     const player = partnerPlayers.get(id);
     return player ? [player] : [];
   });
+  const userDropped = userCuts.flatMap((id) => {
+    const player = userPlayers.get(id);
+    return player ? [player] : [];
+  });
+  const partnerDropped = partnerCuts.flatMap((id) => {
+    const player = partnerPlayers.get(id);
+    return player ? [player] : [];
+  });
   const user = impactForTeam({
     before: beforeUser,
     after: afterUser,
@@ -514,7 +647,7 @@ function analyzeTradeWithLeague({
     received: userSent,
   });
   const verdict = verdictFor(user, partner);
-  const fairnessScore = Math.round(
+  const rosterFairnessScore = Math.round(
     clamp(
       100 -
         Math.abs(user.impactScore - partner.impactScore) * 4.5 -
@@ -523,7 +656,19 @@ function analyzeTradeWithLeague({
       100,
     ),
   );
+  const marketCheck = assessAutomaticTradeMarket({
+    userSends: userSent,
+    partnerSends: partnerSent,
+    userDrops: userDropped,
+    partnerDrops: partnerDropped,
+  });
+  const fairnessScore = marketCheck.eligible
+    ? Math.round(marketCheck.fairnessScore * 0.7 + rosterFairnessScore * 0.3)
+    : Math.min(49, marketCheck.fairnessScore);
   const warnings: string[] = [];
+  warnings.push(
+    ...marketCheck.reasons.map((reason) => `Market-value guard: ${reason}`),
+  );
   const rosterLimit = snapshot.league.roster_positions.filter(
     (position) => !["IR", "RESERVE", "TAXI"].includes(position.toUpperCase()),
   ).length;
@@ -564,8 +709,8 @@ function analyzeTradeWithLeague({
     ),
     user,
     partner,
-    userPackageValue: packageValue(userSent),
-    partnerPackageValue: packageValue(partnerSent),
+    userPackageValue: marketCheck.userNetValue,
+    partnerPackageValue: marketCheck.partnerNetValue,
     reasons: [
       ...teamReasons(user, "Your team"),
       ...teamReasons(partner, partner.teamName),
@@ -777,6 +922,13 @@ export function findTradeSuggestions({
       userDrops.length !== expectedUserDrops ||
       partnerDrops.length !== expectedPartnerDrops
     ) return;
+    const marketCheck = assessAutomaticTradeMarket({
+      userSends: userPackage,
+      partnerSends: partnerPackage,
+      userDrops,
+      partnerDrops,
+    });
+    if (!marketCheck.eligible) return;
     const result = analyzeTradeWithLeague(
       {
         snapshot,

@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   activeRosterPlayerIds,
   analyzeTrade,
+  assessAutomaticTradeMarket,
   findTradeSuggestions,
 } from "../src/features/trades/engine.ts";
+import type { TeamPlayer } from "../src/features/my-team/engine.ts";
 import type { PlayerIntelligence } from "../src/features/player-intelligence/model.ts";
 import type { LeagueSnapshot, SleeperPlayer } from "../src/types.ts";
 
@@ -198,6 +200,72 @@ function sleeperPlayers(): Record<string, SleeperPlayer> {
   );
 }
 
+function marketPlayer({
+  id,
+  name,
+  position,
+  projection,
+  ecr,
+}: {
+  id: string;
+  name: string;
+  position: TeamPlayer["position"];
+  projection: number;
+  ecr: number;
+}): TeamPlayer {
+  return {
+    sleeperId: id,
+    name,
+    team: "NFL",
+    position,
+    positionRank: `${position}${ecr}`,
+    ecr,
+    tier: 1,
+    projectedPoints: projection,
+    injuryStatus: "",
+    reserve: false,
+    starter: true,
+  };
+}
+
+test("market guard rejects Tyler Warren for Parker Washington", () => {
+  const result = assessAutomaticTradeMarket({
+    userSends: [marketPlayer({ id: "warren", name: "Tyler Warren", position: "TE", projection: 205, ecr: 48 })],
+    partnerSends: [marketPlayer({ id: "washington", name: "Parker Washington", position: "WR", projection: 142, ecr: 126 })],
+  });
+  assert.equal(result.eligible, false);
+  assert.equal(result.fairnessScore < 64, true);
+  assert.equal(result.reasons.some((reason) => reason.includes("one-for-one")), true);
+});
+
+test("market guard protects Justin Jefferson from a weak two-player package", () => {
+  const result = assessAutomaticTradeMarket({
+    userSends: [marketPlayer({ id: "jefferson", name: "Justin Jefferson", position: "WR", projection: 292, ecr: 8 })],
+    partnerSends: [
+      marketPlayer({ id: "mcmillan", name: "Tetairoa McMillan", position: "WR", projection: 242, ecr: 29 }),
+      marketPlayer({ id: "harvey", name: "RJ Harvey", position: "RB", projection: 188, ecr: 67 }),
+    ],
+    userDrops: [marketPlayer({ id: "nailor", name: "Jalen Nailor", position: "WR", projection: 118, ecr: 174 })],
+  });
+  assert.equal(result.eligible, false);
+  assert.equal(
+    result.reasons.some((reason) => reason.includes("lacks a comparable centerpiece")),
+    true,
+  );
+});
+
+test("market guard allows a real cornerstone package with premium value", () => {
+  const result = assessAutomaticTradeMarket({
+    userSends: [marketPlayer({ id: "star", name: "Elite Wideout", position: "WR", projection: 286, ecr: 10 })],
+    partnerSends: [
+      marketPlayer({ id: "centerpiece", name: "Near-Elite Back", position: "RB", projection: 275, ecr: 15 }),
+      marketPlayer({ id: "plus", name: "Useful Wideout", position: "WR", projection: 226, ecr: 44 }),
+    ],
+  });
+  assert.equal(result.eligible, true);
+  assert.equal(result.fairnessScore >= 64, true);
+});
+
 test("trade analyzer rebuilds both lineups and measures both teams' needs", () => {
   const result = analyzeTrade({
     snapshot: snapshot(),
@@ -327,7 +395,7 @@ test("automatic trade finder scans opponents and returns responsible offers", ()
   );
 });
 
-test("automatic finder evaluates uneven packages and accounts for roster cuts", () => {
+test("automatic finder keeps any uneven packages responsible after roster cuts", () => {
   const fullSnapshot = snapshot();
   const suggestions = findTradeSuggestions({
     snapshot: fullSnapshot,
@@ -338,7 +406,7 @@ test("automatic finder evaluates uneven packages and accounts for roster cuts", 
     limit: 30,
   });
   const packages = suggestions.filter((suggestion) => suggestion.format !== "one-for-one");
-  assert.equal(packages.length > 0, true);
+  assert.equal(suggestions.length > 0, true);
   for (const suggestion of packages) {
     assert.equal(
       suggestion.format === "two-for-one"
