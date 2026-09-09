@@ -284,7 +284,6 @@ export function detectDraftedControlledPlayers(
   board: PlayerIntelligence[],
   picks: SleeperDraftPick[],
 ): ControlledPlayerDrafted[] {
-  const byId = new Map(board.map((player) => [String(player.id), player]));
   const byName = new Map(
     board.map((player) => [normalizePlayerName(player.name), player]),
   );
@@ -303,7 +302,6 @@ export function detectDraftedControlledPlayers(
   return picks
     .flatMap((pick): ControlledPlayerDrafted[] => {
       const player =
-        byId.get(String(pick.player_id)) ??
         byName.get(normalizePlayerName(pickPlayerName(pick)));
       if (!player) return [];
       const kinds = controlsByPlayer.get(player.id);

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   analyzeLeagueTeams,
   optimizeLineup,
+  resolveLeagueRosters,
   type TeamPlayer,
 } from "../src/features/my-team/engine.ts";
 import type { PlayerIntelligence } from "../src/features/player-intelligence/model.ts";
@@ -91,6 +92,119 @@ test("injured players are not promoted over healthy lineup options", () => {
     ["RB", "BN"],
   );
   assert.equal(result.lineup[0].player?.id, "2");
+});
+
+test("questionable tags do not bench a clearly higher weekly projection", () => {
+  const result = optimizeLineup(
+    [
+      teamPlayer("1", "WR", 15.3, true, "Questionable"),
+      teamPlayer("2", "WR", 6.5, false),
+    ],
+    ["WR", "BN"],
+  );
+  assert.equal(result.lineup[0].player?.id, "1");
+  assert.equal(result.lineup[0].change, "keep");
+});
+
+test("FantasyPros ids cannot overwrite a different Sleeper player", () => {
+  const snapshot = {
+    league: {
+      league_id: "league",
+      name: "THE League",
+      season: "2026",
+      status: "in_season",
+      total_rosters: 1,
+      draft_id: "draft",
+      previous_league_id: null,
+      roster_positions: ["WR", "DEF"],
+      settings: {
+        num_teams: 1,
+        playoff_teams: 1,
+        playoff_week_start: 15,
+        reserve_slots: 0,
+        waiver_budget: 100,
+        trade_deadline: 10,
+        max_keepers: 0,
+      },
+      scoring_settings: { rec: 1 },
+    },
+    draft: {
+      draft_id: "draft",
+      league_id: "league",
+      type: "snake",
+      status: "complete",
+      start_time: null,
+      draft_order: null,
+      slot_to_roster_id: { "1": 1 },
+      settings: {
+        teams: 1,
+        rounds: 2,
+        pick_timer: 60,
+        slots_qb: 0,
+        slots_rb: 0,
+        slots_wr: 1,
+        slots_te: 0,
+        slots_flex: 0,
+        slots_k: 0,
+        slots_def: 1,
+        slots_bn: 0,
+      },
+    },
+    users: [],
+    rosters: [{
+      roster_id: 1,
+      owner_id: "u1",
+      players: ["11583"],
+      keepers: [],
+      reserve: [],
+      starters: ["11583"],
+      settings: {
+        wins: 0,
+        losses: 0,
+        ties: 0,
+        waiver_position: 1,
+        waiver_budget_used: 0,
+      },
+    }],
+    fetchedAt: 0,
+  } satisfies LeagueSnapshot;
+  const patriots = {
+    ...intelligence("99", "DST", 6.5),
+    id: "11583",
+    name: "New England Patriots",
+    team: "NE",
+  };
+  const flowers = {
+    ...intelligence("7", "WR", 15.3),
+    id: "fp-zay",
+    name: "Zay Flowers",
+    team: "BAL",
+  };
+  const sleeperPlayers = {
+    "11583": {
+      player_id: "11583",
+      first_name: "Zay",
+      last_name: "Flowers",
+      full_name: "Zay Flowers",
+      position: "WR",
+      fantasy_positions: ["WR"],
+      team: "BAL",
+      injury_status: "Questionable",
+      status: "Active",
+      age: 25,
+      years_exp: 3,
+    },
+  } satisfies Record<string, SleeperPlayer>;
+
+  const [resolved] = resolveLeagueRosters({
+    snapshot,
+    picks: [],
+    board: [patriots, flowers],
+    sleeperPlayers,
+  });
+  assert.equal(resolved.players[0].name, "Zay Flowers");
+  assert.equal(resolved.players[0].position, "WR");
+  assert.equal(resolved.players[0].projectedPoints, 15.3);
 });
 
 test("league analysis ranks all teams and identifies thin positions", () => {

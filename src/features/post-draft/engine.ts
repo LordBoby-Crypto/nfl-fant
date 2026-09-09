@@ -149,7 +149,6 @@ function playerMarketPick(player: PlayerIntelligence | null) {
 
 function boardIndexes(board: PlayerIntelligence[]) {
   return {
-    byId: new Map(board.map((player) => [String(player.id), player])),
     byName: new Map(
       board.map((player) => [normalizePlayerName(player.name), player]),
     ),
@@ -161,7 +160,6 @@ function resolvePickPlayer(
   indexes: ReturnType<typeof boardIndexes>,
 ) {
   return (
-    indexes.byId.get(String(pick.player_id)) ??
     indexes.byName.get(normalizePlayerName(pickPlayerName(pick))) ??
     null
   );

@@ -351,7 +351,6 @@ export function buildWaiverAssistant({
     const position = normalizedPosition(player.position);
     if (!position || player.team === "FA") return false;
     return (
-      !rostered.ids.has(String(player.id)) &&
       !rostered.names.has(normalizePlayerName(player.name))
     );
   });
@@ -362,7 +361,6 @@ export function buildWaiverAssistant({
       if (!position) return null;
       const depth = depthFor(team, position);
       const trendCount =
-        trends.byId.get(String(player.id)) ??
         trends.byName.get(normalizePlayerName(player.name)) ??
         0;
       const drop = chooseDrop(team, position, rosterSpotsOpen);
