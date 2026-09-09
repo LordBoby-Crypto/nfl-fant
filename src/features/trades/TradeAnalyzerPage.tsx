@@ -6,6 +6,7 @@ import {
   Check,
   CircleAlert,
   Gauge,
+  Handshake,
   LockKeyhole,
   RefreshCw,
   Scale,
@@ -30,7 +31,9 @@ import {
 import type { useWarRoom } from "../player-intelligence/useWarRoom";
 import {
   analyzeTrade,
+  findTradeSuggestions,
   type TradeAnalysis,
+  type TradeSuggestion,
   type TradeTeamImpact,
 } from "./engine";
 
@@ -404,6 +407,118 @@ function TradeResultPanel({ result }: { result: TradeAnalysis }) {
   );
 }
 
+function TradeOpportunityCard({
+  suggestion,
+  rank,
+  selected,
+  onSelect,
+}: {
+  suggestion: TradeSuggestion;
+  rank: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const outgoing = suggestion.userSends[0];
+  const incoming = suggestion.partnerSends[0];
+  return (
+    <button
+      className={`trade-opportunity-card ${selected ? "is-selected" : ""}`}
+      type="button"
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
+      <header>
+        <span>
+          <small>#{rank} · {suggestion.label}</small>
+          <strong>{suggestion.partnerName}</strong>
+        </span>
+        <span className="trade-opportunity-fairness">
+          <strong>{suggestion.analysis.fairnessScore}%</strong>
+          <small>fair</small>
+        </span>
+      </header>
+      <div className="trade-opportunity-swap">
+        <span>
+          <small>You send</small>
+          <b className={`position-mark position-${outgoing.position.toLowerCase()}`}>
+            {outgoing.position}
+          </b>
+          <strong>{outgoing.name}</strong>
+        </span>
+        <ArrowRight />
+        <span>
+          <small>You receive</small>
+          <b className={`position-mark position-${incoming.position.toLowerCase()}`}>
+            {incoming.position}
+          </b>
+          <strong>{incoming.name}</strong>
+        </span>
+      </div>
+      <footer>
+        <span><TrendingUp /> Your roster {signed(suggestion.analysis.user.impactScore, 1)}</span>
+        <span><Handshake /> {suggestion.partnerReason}</span>
+      </footer>
+    </button>
+  );
+}
+
+function AutomaticTradeFinder({
+  suggestions,
+  partnerCount,
+  selectedId,
+  onSelect,
+}: {
+  suggestions: TradeSuggestion[];
+  partnerCount: number;
+  selectedId: string;
+  onSelect: (suggestion: TradeSuggestion) => void;
+}) {
+  return (
+    <section className="trade-finder">
+      <header>
+        <span className="trade-finder-icon"><Sparkles /></span>
+        <span>
+          <small>Automatic league scan</small>
+          <h2>Best trades for your roster</h2>
+          <p>
+            Ranked after rebuilding both teams&apos; optimal lineup, depth chart and
+            roster needs. Kickers, defenses and unavailable players are excluded.
+          </p>
+        </span>
+        <span className="trade-finder-count">
+          <strong>{partnerCount}</strong>
+          <small>teams scanned</small>
+        </span>
+      </header>
+      {suggestions.length ? (
+        <div className="trade-opportunity-grid">
+          {suggestions.map((suggestion, index) => (
+            <TradeOpportunityCard
+              key={suggestion.id}
+              suggestion={suggestion}
+              rank={index + 1}
+              selected={selectedId === suggestion.id}
+              onSelect={() => onSelect(suggestion)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="trade-finder-empty">
+          <ShieldCheck />
+          <span>
+            <strong>No responsible one-for-one offer found</strong>
+            <p>
+              The model will not manufacture a recommendation that hurts the
+              other roster or leaves a lineup spot empty. Try the custom analyzer
+              for a multi-player package.
+            </p>
+          </span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function TradeAnalyzerPage({
   snapshot,
   draftPicks,
@@ -424,6 +539,10 @@ export function TradeAnalyzerPage({
   const [userQuery, setUserQuery] = useState("");
   const [partnerQuery, setPartnerQuery] = useState("");
   const [submitted, setSubmitted] = useState<SubmittedOffer | null>(null);
+  const [analysisMode, setAnalysisMode] = useState<"automatic" | "custom">(
+    "automatic",
+  );
+  const [selectedSuggestionId, setSelectedSuggestionId] = useState("");
   const playerIds = useMemo(
     () => [
       ...snapshot.rosters.flatMap((roster) => roster.players ?? []),
@@ -464,6 +583,34 @@ export function TradeAnalyzerPage({
     : partners[0]?.rosterId ?? 0;
   const partnerTeam =
     partners.find((team) => team.rosterId === activePartnerId) ?? null;
+  const isLoading =
+    warRoom.loadingData || sleeperPlayers.loading || draftPicks.loading;
+  const suggestions = useMemo(
+    () =>
+      warRoom.board && userRoster && !isLoading
+        ? findTradeSuggestions({
+            snapshot,
+            picks: draftPicks.picks,
+            board: warRoom.board.players,
+            sleeperPlayers: sleeperPlayers.players,
+            userRosterId: userRoster.roster_id,
+            teams,
+          })
+        : [],
+    [
+      draftPicks.picks,
+      isLoading,
+      sleeperPlayers.players,
+      snapshot,
+      teams,
+      userRoster,
+      warRoom.board,
+    ],
+  );
+  const selectedSuggestion =
+    suggestions.find((item) => item.id === selectedSuggestionId) ??
+    suggestions[0] ??
+    null;
   const result = useMemo(() => {
     if (
       !submitted ||
@@ -496,8 +643,6 @@ export function TradeAnalyzerPage({
         (pick) => Number(pick.roster_id) === userRoster?.roster_id,
       ),
   );
-  const isLoading =
-    warRoom.loadingData || sleeperPlayers.loading || draftPicks.loading;
 
   function clearAnalysis() {
     setSubmitted(null);
@@ -531,15 +676,21 @@ export function TradeAnalyzerPage({
       userSends: [...userSends],
       partnerSends: [...partnerSends],
     });
+    setAnalysisMode("custom");
+  }
+
+  function selectSuggestion(suggestion: TradeSuggestion) {
+    setSelectedSuggestionId(suggestion.id);
+    setAnalysisMode("automatic");
   }
 
   return (
     <main className="workspace-page trade-page">
       <header className="page-heading trade-page-heading">
         <div>
-          <h1>Trade Analyzer</h1>
+          <h1>Trade Finder</h1>
           <p>
-            Evaluate the offer against both teams&apos; lineups, depth and needs.
+            Find realistic offers automatically, then inspect the impact on both teams.
           </p>
         </div>
         <button
@@ -606,77 +757,102 @@ export function TradeAnalyzerPage({
 
       {warRoom.isUnlocked && rosterHasPlayers && !isLoading && userTeam && partnerTeam ? (
         <>
-          <section className="trade-partner-command">
-            <span>
-              <UsersRound />
-              <span>
-                <small>Trade with</small>
-                <strong>{partnerTeam.teamName}</strong>
-              </span>
-            </span>
-            <label>
-              <span className="sr-only">Choose trade partner</span>
-              <select
-                value={activePartnerId}
-                onChange={(event) => changePartner(Number(event.target.value))}
-              >
-                {partners.map((team) => (
-                  <option key={team.rosterId} value={team.rosterId}>
-                    {team.teamName} · ROS #{team.strength.rank}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <span>
-              <small>Trade deadline</small>
-              <strong>Week {snapshot.league.settings.trade_deadline}</strong>
-            </span>
-            <span>
-              <small>Model</small>
-              <strong>Both teams</strong>
-            </span>
-          </section>
+          <AutomaticTradeFinder
+            suggestions={suggestions}
+            partnerCount={partners.length}
+            selectedId={selectedSuggestion?.id ?? ""}
+            onSelect={selectSuggestion}
+          />
 
-          <div className="trade-builder">
-            <RosterSide
-              label="You send"
-              team={userTeam}
-              selectedIds={userSends}
-              query={userQuery}
-              onQuery={setUserQuery}
-              onToggle={(id) => toggle(id, userSends, setUserSends)}
-            />
-            <div className="trade-builder-action">
-              <span><ArrowLeftRight /></span>
-              <button
-                className="button primary"
-                type="button"
-                disabled={!userSends.length || !partnerSends.length}
-                onClick={runAnalysis}
-              >
-                <Sparkles />
-                Analyze both teams
-              </button>
-              <small>
-                {userSends.length} for {partnerSends.length}
-              </small>
-            </div>
-            <RosterSide
-              label="You receive"
-              team={partnerTeam}
-              selectedIds={partnerSends}
-              query={partnerQuery}
-              onQuery={setPartnerQuery}
-              onToggle={(id) => toggle(id, partnerSends, setPartnerSends)}
-            />
-          </div>
-
-          {result?.valid ? <TradeResultPanel result={result} /> : null}
-          {result && !result.valid ? (
-            <div className="trade-analysis-error" role="alert">
-              <AlertTriangle /> {result.error}
-            </div>
+          {analysisMode === "automatic" && selectedSuggestion ? (
+            <TradeResultPanel result={selectedSuggestion.analysis} />
           ) : null}
+
+          <details className="trade-custom-analyzer">
+            <summary>
+              <span><ArrowLeftRight /></span>
+              <span>
+                <strong>Build a custom trade</strong>
+                <small>Optional: choose multi-player packages or test a specific offer.</small>
+              </span>
+              <em>Advanced</em>
+            </summary>
+            <div className="trade-custom-content">
+              <section className="trade-partner-command">
+                <span>
+                  <UsersRound />
+                  <span>
+                    <small>Trade with</small>
+                    <strong>{partnerTeam.teamName}</strong>
+                  </span>
+                </span>
+                <label>
+                  <span className="sr-only">Choose trade partner</span>
+                  <select
+                    value={activePartnerId}
+                    onChange={(event) => changePartner(Number(event.target.value))}
+                  >
+                    {partners.map((team) => (
+                      <option key={team.rosterId} value={team.rosterId}>
+                        {team.teamName} · ROS #{team.strength.rank}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span>
+                  <small>Trade deadline</small>
+                  <strong>Week {snapshot.league.settings.trade_deadline}</strong>
+                </span>
+                <span>
+                  <small>Model</small>
+                  <strong>Both teams</strong>
+                </span>
+              </section>
+
+              <div className="trade-builder">
+                <RosterSide
+                  label="You send"
+                  team={userTeam}
+                  selectedIds={userSends}
+                  query={userQuery}
+                  onQuery={setUserQuery}
+                  onToggle={(id) => toggle(id, userSends, setUserSends)}
+                />
+                <div className="trade-builder-action">
+                  <span><ArrowLeftRight /></span>
+                  <button
+                    className="button primary"
+                    type="button"
+                    disabled={!userSends.length || !partnerSends.length}
+                    onClick={runAnalysis}
+                  >
+                    <Sparkles />
+                    Analyze both teams
+                  </button>
+                  <small>
+                    {userSends.length} for {partnerSends.length}
+                  </small>
+                </div>
+                <RosterSide
+                  label="You receive"
+                  team={partnerTeam}
+                  selectedIds={partnerSends}
+                  query={partnerQuery}
+                  onQuery={setPartnerQuery}
+                  onToggle={(id) => toggle(id, partnerSends, setPartnerSends)}
+                />
+              </div>
+
+              {analysisMode === "custom" && result?.valid ? (
+                <TradeResultPanel result={result} />
+              ) : null}
+              {analysisMode === "custom" && result && !result.valid ? (
+                <div className="trade-analysis-error" role="alert">
+                  <AlertTriangle /> {result.error}
+                </div>
+              ) : null}
+            </div>
+          </details>
         </>
       ) : null}
 
