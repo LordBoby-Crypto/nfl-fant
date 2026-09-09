@@ -593,7 +593,7 @@ function partnerReason(analysis: TradeAnalysis) {
   if (partner.depthDelta > 0) {
     return `Their bench depth improves by ${signedNumber(partner.depthDelta)}.`;
   }
-  return `The offer is ${analysis.fairnessScore}% fair by two-team roster impact.`;
+  return `Their roster stays essentially even in a ${analysis.fairnessScore}% fair offer.`;
 }
 
 function signedNumber(value: number) {
