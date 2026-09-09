@@ -22,14 +22,14 @@ const fixturePlayers: FixturePlayer[] = [
   { id: "u-rb2", name: "User Thin Back", position: "RB", projection: 118, ecr: 158, rosterId: 1 },
   { id: "u-wr1", name: "User Alpha Wideout", position: "WR", projection: 282, ecr: 12, rosterId: 1 },
   { id: "u-wr2", name: "User Wideout Two", position: "WR", projection: 262, ecr: 19, rosterId: 1 },
-  { id: "u-wr3", name: "User Surplus Wideout", position: "WR", projection: 232, ecr: 37, rosterId: 1 },
+  { id: "u-wr3", name: "User Surplus Wideout", position: "WR", projection: 250, ecr: 32, rosterId: 1 },
   { id: "u-te", name: "User Tight End", position: "TE", projection: 166, ecr: 76, rosterId: 1 },
   { id: "u-k", name: "User Kicker", position: "K", projection: 112, ecr: 205, rosterId: 1 },
   { id: "u-dst", name: "User Defense", position: "DST", projection: 108, ecr: 198, rosterId: 1 },
   { id: "p-qb", name: "Partner Quarterback", position: "QB", projection: 305, ecr: 28, rosterId: 2 },
   { id: "p-rb1", name: "Partner Alpha Back", position: "RB", projection: 284, ecr: 9, rosterId: 2 },
   { id: "p-rb2", name: "Partner Back Two", position: "RB", projection: 258, ecr: 17, rosterId: 2 },
-  { id: "p-rb3", name: "Partner Surplus Back", position: "RB", projection: 226, ecr: 39, rosterId: 2 },
+  { id: "p-rb3", name: "Partner Surplus Back", position: "RB", projection: 250, ecr: 32, rosterId: 2 },
   { id: "p-wr1", name: "Partner Wideout One", position: "WR", projection: 184, ecr: 91, rosterId: 2 },
   { id: "p-wr2", name: "Partner Thin Wideout", position: "WR", projection: 105, ecr: 181, rosterId: 2 },
   { id: "p-te", name: "Partner Tight End", position: "TE", projection: 160, ecr: 83, rosterId: 2 },
@@ -299,6 +299,12 @@ test("automatic trade finder scans opponents and returns responsible offers", ()
   assert.equal(best.analysis.valid, true);
   assert.equal(best.analysis.user.impactScore > 0, true);
   assert.equal(best.analysis.partner.impactScore >= -1.5, true);
+  assert.equal(
+    suggestions.every((suggestion) =>
+      ["helps-both", "balanced"].includes(suggestion.analysis.verdict),
+    ),
+    true,
+  );
   assert.equal(best.analysis.fairnessScore >= 55, true);
   assert.equal(
     [...best.userSends, ...best.partnerSends].some(
