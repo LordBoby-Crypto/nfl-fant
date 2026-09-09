@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  activeRosterPlayerIds,
   analyzeTrade,
   findTradeSuggestions,
 } from "../src/features/trades/engine.ts";
@@ -362,4 +363,19 @@ test("automatic finder evaluates uneven packages and accounts for roster cuts", 
       true,
     );
   }
+});
+
+test("active roster occupancy excludes IR and taxi but retains unresolved IDs", () => {
+  const roster = snapshot().rosters[0];
+  roster.reserve = ["u-b3"];
+  roster.taxi = ["u-b1"];
+  const activeIds = activeRosterPlayerIds(roster, []);
+  assert.equal(activeIds.includes("u-b3"), false);
+  assert.equal(activeIds.includes("u-b1"), false);
+  assert.equal(activeIds.includes("u-b2"), true);
+  roster.players.push("unresolved-player");
+  assert.equal(
+    activeRosterPlayerIds(roster, []).includes("unresolved-player"),
+    true,
+  );
 });

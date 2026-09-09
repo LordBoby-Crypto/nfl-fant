@@ -639,7 +639,10 @@ export function TradeAnalyzerPage({
   const partnerTeam =
     partners.find((team) => team.rosterId === activePartnerId) ?? null;
   const isLoading =
-    warRoom.loadingData || sleeperPlayers.loading || draftPicks.loading;
+    warRoom.loadingData ||
+    sleeperPlayers.loading ||
+    !sleeperPlayers.current ||
+    draftPicks.loading;
   const suggestions = useMemo(
     () =>
       warRoom.board && userRoster && !isLoading
