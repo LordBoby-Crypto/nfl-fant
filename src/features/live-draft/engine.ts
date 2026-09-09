@@ -480,7 +480,6 @@ export function draftPickForPlayer(
   lookup: DraftedPlayerLookup,
 ) {
   return (
-    lookup.byId.get(String(player.id)) ??
     lookup.byName.get(normalizePlayerName(player.name)) ??
     null
   );

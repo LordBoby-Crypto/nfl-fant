@@ -549,13 +549,12 @@ export function calculatePlayerMatchCoverage(
   const unmatched: string[] = [];
   let matched = 0;
   for (const player of eligible) {
-    const direct = sleeperPlayers[String(player.id)];
     const candidates = sleeperByName.get(normalizePlayerName(player.name)) ?? [];
     const samePosition = candidates.some((candidate) => {
       const position = candidate.position === "DEF" ? "DST" : candidate.position;
       return position === player.position;
     });
-    if (direct || samePosition) matched += 1;
+    if (samePosition) matched += 1;
     else if (unmatched.length < 8) unmatched.push(player.name);
   }
   return {

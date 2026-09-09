@@ -166,11 +166,23 @@ function buildStartSit(user: TeamAnalysis) {
           FLEX_POSITIONS.has(candidate.position),
       ) ??
       null;
-    if (sit) usedSits.add(sit.sleeperId);
     const gain = projectedGain(start, sit);
     const riskySit = sit?.injuryStatus.trim();
+    const sitUnavailable = Boolean(
+      sit &&
+      (sit.reserve ||
+        /(out|injured reserve|\bir\b|pup|suspend|doubtful)/i.test(
+          sit.injuryStatus,
+        )),
+    );
+    // Never advertise a healthy/Questionable downgrade as an improvement.
+    // An unavailable starter is the exception because it cannot score.
+    if (sit && gain !== null && gain <= 0 && !sitUnavailable) return [];
+    if (sit) usedSits.add(sit.sleeperId);
     const reason = sit
-      ? gain !== null
+      ? sitUnavailable
+        ? `${sit.name} is not currently safe to start; ${start.name} is the best eligible replacement for ${assignment.label}.`
+        : gain !== null
         ? `${start.name} projects ${Math.abs(gain).toFixed(1)} point${Math.abs(gain) === 1 ? "" : "s"} ${gain >= 0 ? "above" : "below"} ${sit.name} this week${riskySit ? `, while ${sit.name} carries a ${riskySit} tag` : ""}.`
         : `${start.name} has the stronger weekly lineup profile${riskySit ? ` and ${sit.name} carries a ${riskySit} tag` : ""}.`
       : `${start.name} is the best eligible option for ${assignment.label}.`;
@@ -180,7 +192,9 @@ function buildStartSit(user: TeamAnalysis) {
       sit,
       projectedGain: gain,
       confidence:
-        gain === null
+        sitUnavailable
+          ? "High"
+          : gain === null
           ? "Limited"
           : Math.abs(gain) >= 3
             ? "High"

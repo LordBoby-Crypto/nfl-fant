@@ -282,6 +282,33 @@ test("start/sit calls identify the bench upgrade and injury action", () => {
   );
 });
 
+test("start/sit calls never present a questionable negative-point downgrade", () => {
+  const replacement = player("replacement", 6.5, false);
+  const starter = player("starter", 15.3, true, "Questionable");
+  const lineup: LineupAssignment[] = [{
+    key: "WR-WR",
+    slot: "WR",
+    label: "WR",
+    player: replacement,
+    change: "start",
+  }];
+  replacement.position = "WR";
+  starter.position = "WR";
+  const weeklyTeams = [
+    team(1, 60, 21.8, lineup, [replacement, starter]),
+    ...teams().slice(1),
+  ];
+  const model = buildWeeklyDecisionModel({
+    snapshot: snapshot(),
+    outlook: outlook(),
+    weeklyTeams,
+    rosTeams: teams(),
+    userRosterId: 1,
+    playoffIterations: 200,
+  });
+  assert.deepEqual(model.startSit, []);
+});
+
 test("playoff simulation is deterministic and schedule strength ranks every team", () => {
   const input = {
     snapshot: snapshot(),

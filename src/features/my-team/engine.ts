@@ -107,7 +107,15 @@ function healthPenalty(player: TeamPlayer) {
 function playerLineupValue(player: TeamPlayer) {
   const projection = player.projectedPoints;
   const market = player.ecr === null ? 0 : Math.max(0, 260 - player.ecr);
-  return (projection ?? market) - healthPenalty(player) * 4;
+  const context = player.injuryStatus.toLocaleLowerCase();
+  const unavailable =
+    player.reserve ||
+    /(out|injured reserve|\bir\b|pup|suspend)/.test(context);
+  const doubtful = /doubtful/.test(context);
+
+  // Weekly projections already represent expected output. Questionable and
+  // limited tags belong in injury alerts, not as a hidden 40-point penalty.
+  return (projection ?? market) - (unavailable ? 10_000 : doubtful ? 25 : 0);
 }
 
 function percentile(value: number, values: number[], descending = false) {
@@ -172,7 +180,6 @@ export function resolveLeagueRosters({
   board: PlayerIntelligence[];
   sleeperPlayers: Record<string, SleeperPlayer>;
 }): ResolvedRoster[] {
-  const boardById = new Map(board.map((player) => [String(player.id), player]));
   const boardByName = new Map(
     board.map((player) => [normalizePlayerName(player.name), player]),
   );
@@ -188,7 +195,6 @@ export function resolveLeagueRosters({
         [sleeper?.first_name, sleeper?.last_name].filter(Boolean).join(" ").trim() ||
         (pick ? pickPlayerName(pick) : "");
       const intelligence =
-        boardById.get(sleeperId) ??
         (name ? boardByName.get(normalizePlayerName(name)) : undefined) ??
         null;
       const position =

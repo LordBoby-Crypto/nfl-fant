@@ -83,9 +83,6 @@ export function buildOffBoardEntries({
   players: PlayerIntelligence[];
   teams: TeamDraftState[];
 }) {
-  const playersById = new Map(
-    players.map((player) => [String(player.id), player]),
-  );
   const playersByName = new Map(
     players.map((player) => [normalizePlayerName(player.name), player]),
   );
@@ -97,7 +94,6 @@ export function buildOffBoardEntries({
     .sort((left, right) => right.pick_no - left.pick_no)
     .map((pick): OffBoardEntry => {
       const player =
-        playersById.get(String(pick.player_id)) ??
         playersByName.get(normalizePlayerName(pickPlayerName(pick))) ??
         null;
       return {
