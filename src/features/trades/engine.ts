@@ -665,7 +665,8 @@ export function findTradeSuggestions({
         );
         if (
           uncovered ||
-          result.user.impactScore < 0.3 ||
+          !["helps-both", "balanced"].includes(result.verdict) ||
+          result.user.impactScore < 0.2 ||
           result.partner.impactScore < -1.5 ||
           result.fairnessScore < 55
         ) {
