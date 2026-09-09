@@ -292,7 +292,7 @@ test("league analysis ranks all teams and identifies thin positions", () => {
     "QB", "RB", "WR", "TE", "WR", "K", "DST", "RB", "QB", "RB",
   ];
   const board = positions.map((position, index) =>
-    intelligence(String(index + 1), position, 310 - index * 12),
+    intelligence(String(index + 1), position, 310 - index * 12 + 0.04),
   );
   const sleeperPlayers = Object.fromEntries(
     positions.map((position, index) => {
@@ -322,6 +322,14 @@ test("league analysis ranks all teams and identifies thin positions", () => {
   const thin = analyses.find((team) => team.rosterId === 2)!;
   assert.equal(analyses.length, 2);
   assert.equal(strong.strength.rank, 1);
+  const visibleStarterTotal = Math.round(
+    strong.lineup.reduce(
+      (sum, slot) =>
+        sum + Math.round((slot.player?.projectedPoints ?? 0) * 10) / 10,
+      0,
+    ) * 10,
+  ) / 10;
+  assert.equal(strong.projectedPoints, visibleStarterTotal);
   assert.equal(thin.weaknesses.some((weakness) => weakness.severity === "critical"), true);
   assert.equal(strong.lineup.every((slot) => slot.player), true);
 });

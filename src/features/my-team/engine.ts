@@ -457,7 +457,9 @@ function analyzeResolvedRoster(
     starterScore * 0.68 + depthScore * 0.22 + healthScore * 0.1,
   );
   const projected = starterPlayers.flatMap((player) =>
-    player.projectedPoints === null ? [] : [player.projectedPoints],
+    player.projectedPoints === null
+      ? []
+      : [Math.round(player.projectedPoints * 10) / 10],
   );
   const intelligenceCount = resolved.players.filter(
     (player) => player.intelligence,
