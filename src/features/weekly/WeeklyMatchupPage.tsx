@@ -30,6 +30,7 @@ import {
   type InjuryAlert,
   type WeeklyDecisionModel,
 } from "./engine";
+import "./weeklyProjectionBreakdown.css";
 
 type DraftPickState = ReturnType<typeof useDraftPicks>;
 type WarRoomState = ReturnType<typeof useWarRoom>;
@@ -115,6 +116,29 @@ function MatchupCommand({
   const winProbability = userIsLeft
     ? matchup.userWinProbability
     : 100 - matchup.userWinProbability;
+  const userRosRank = userIsLeft
+    ? matchup.userRosRank
+    : matchup.opponentRosRank;
+  const opponentRosRank = userIsLeft
+    ? matchup.opponentRosRank
+    : matchup.userRosRank;
+  const displayedTie =
+    matchup.projectionSource === "weekly" &&
+    user.projectedPoints !== null &&
+    opponent.projectedPoints !== null &&
+    user.projectedPoints.toFixed(1) === opponent.projectedPoints.toFixed(1);
+
+  function lineupBreakdown(team: typeof user) {
+    return team.lineup.map((assignment) => (
+      <span key={assignment.key} className="weekly-projection-player">
+        <b>{assignment.label}</b>
+        <span>{assignment.player?.name ?? "Open slot"}</span>
+        <strong>
+          {assignment.player?.projectedPoints?.toFixed(1) ?? "—"}
+        </strong>
+      </span>
+    ));
+  }
 
   return (
     <section className="weekly-matchup-command">
@@ -137,7 +161,7 @@ function MatchupCommand({
           <span>
             <small>Your optimized starters</small>
             <strong>{user.teamName}</strong>
-            <em>ROS rank #{user.strength.rank}</em>
+            <em>ROS rank #{userRosRank}</em>
           </span>
           <span>
             <small>Week projection</small>
@@ -151,7 +175,7 @@ function MatchupCommand({
           <span>
             <small>Opponent</small>
             <strong>{opponent.teamName}</strong>
-            <em>ROS rank #{opponent.strength.rank}</em>
+            <em>ROS rank #{opponentRosRank}</em>
           </span>
           <span>
             <small>Week projection</small>
@@ -160,6 +184,37 @@ function MatchupCommand({
           </span>
         </article>
       </div>
+      {matchup.projectionSource === "weekly" ? (
+        <details className="weekly-projection-breakdown" open={displayedTie}>
+          <summary>
+            {displayedTie
+              ? "Verify tied projection"
+              : "View projection breakdown"}
+          </summary>
+          <div>
+            <section>
+              <header>
+                <strong>{user.teamName}</strong>
+                <span>{user.projectedPoints?.toFixed(1) ?? "—"}</span>
+              </header>
+              {lineupBreakdown(user)}
+            </section>
+            <section>
+              <header>
+                <strong>{opponent.teamName}</strong>
+                <span>{opponent.projectedPoints?.toFixed(1) ?? "—"}</span>
+              </header>
+              {lineupBreakdown(opponent)}
+            </section>
+          </div>
+          {displayedTie ? (
+            <p>
+              Both optimized lineups total the same at one-decimal precision,
+              so the model correctly begins at 50% before games are scored.
+            </p>
+          ) : null}
+        </details>
+      ) : null}
       <footer>
         <Gauge />
         Win chance uses {matchup.projectionSource === "weekly"
