@@ -65,6 +65,35 @@ export interface InvalidTradeAnalysis {
   error: string;
 }
 
+export interface TradeSuggestion {
+  id: string;
+  partnerRosterId: number;
+  partnerName: string;
+  userSends: TeamPlayer[];
+  partnerSends: TeamPlayer[];
+  analysis: TradeAnalysis;
+  opportunityScore: number;
+  label: "Mutual upgrade" | "Solves a need" | "Fair value" | "Best fit";
+  partnerReason: string;
+}
+
+interface TradeInputs {
+  snapshot: LeagueSnapshot;
+  picks: SleeperDraftPick[];
+  board: PlayerIntelligence[];
+  sleeperPlayers: Record<string, SleeperPlayer>;
+  userRosterId: number;
+  partnerRosterId: number;
+  userSends: string[];
+  partnerSends: string[];
+}
+
+interface TradeSuggestionInputs
+  extends Omit<TradeInputs, "partnerRosterId" | "userSends" | "partnerSends"> {
+  limit?: number;
+  teams?: TeamAnalysis[];
+}
+
 const VERDICT_LABELS: Record<TradeVerdict, string> = {
   "helps-both": "Helps both teams",
   balanced: "Fair, low-impact trade",
@@ -305,25 +334,15 @@ function receivedRisk(team: TradeTeamImpact) {
   );
 }
 
-export function analyzeTrade({
+function analyzeTradeWithLeague({
   snapshot,
-  picks,
   board,
   sleeperPlayers,
   userRosterId,
   partnerRosterId,
   userSends,
   partnerSends,
-}: {
-  snapshot: LeagueSnapshot;
-  picks: SleeperDraftPick[];
-  board: PlayerIntelligence[];
-  sleeperPlayers: Record<string, SleeperPlayer>;
-  userRosterId: number;
-  partnerRosterId: number;
-  userSends: string[];
-  partnerSends: string[];
-}): TradeAnalysis | InvalidTradeAnalysis {
+}: TradeInputs, beforeLeague: TeamAnalysis[]): TradeAnalysis | InvalidTradeAnalysis {
   const outgoing = uniqueIds(userSends);
   const incoming = uniqueIds(partnerSends);
   if (userRosterId === partnerRosterId) {
@@ -339,12 +358,6 @@ export function analyzeTrade({
     return { valid: false, error: "A player cannot appear on both sides." };
   }
 
-  const beforeLeague = analyzeLeagueTeams({
-    snapshot,
-    picks,
-    board,
-    sleeperPlayers,
-  });
   const beforeUser = beforeLeague.find((team) => team.rosterId === userRosterId);
   const beforePartner = beforeLeague.find(
     (team) => team.rosterId === partnerRosterId,
@@ -409,19 +422,50 @@ export function analyzeTrade({
       return roster;
     }),
   };
-  const afterLeague = analyzeLeagueTeams({
-    snapshot: afterSnapshot,
+  const afterPair = analyzeLeagueTeams({
+    snapshot: {
+      ...afterSnapshot,
+      rosters: afterSnapshot.rosters.filter((roster) =>
+        [userRosterId, partnerRosterId].includes(roster.roster_id),
+      ),
+    },
     picks: [],
     board,
     sleeperPlayers,
   });
-  const afterUser = afterLeague.find((team) => team.rosterId === userRosterId);
-  const afterPartner = afterLeague.find(
+  const rawAfterUser = afterPair.find((team) => team.rosterId === userRosterId);
+  const rawAfterPartner = afterPair.find(
     (team) => team.rosterId === partnerRosterId,
   );
-  if (!afterUser || !afterPartner) {
+  if (!rawAfterUser || !rawAfterPartner) {
     return { valid: false, error: "The proposed rosters could not be analyzed." };
   }
+  const updatedTeams = beforeLeague.map((team) =>
+    team.rosterId === userRosterId
+      ? rawAfterUser
+      : team.rosterId === partnerRosterId
+        ? rawAfterPartner
+        : team,
+  );
+  const updatedRanks = new Map(
+    [...updatedTeams]
+      .sort(
+        (left, right) =>
+          right.strength.overall - left.strength.overall ||
+          left.rosterId - right.rosterId,
+      )
+      .map((team, index) => [team.rosterId, index + 1]),
+  );
+  const withLeagueRank = (team: TeamAnalysis): TeamAnalysis => ({
+    ...team,
+    strength: {
+      ...team.strength,
+      rank: updatedRanks.get(team.rosterId) ?? beforeLeague.length,
+      totalTeams: beforeLeague.length,
+    },
+  });
+  const afterUser = withLeagueRank(rawAfterUser);
+  const afterPartner = withLeagueRank(rawAfterPartner);
 
   const userSent = outgoing.flatMap((id) => {
     const player = userPlayers.get(id);
@@ -500,4 +544,182 @@ export function analyzeTrade({
     ].slice(0, 6),
     warnings,
   };
+}
+
+export function analyzeTrade(
+  inputs: TradeInputs,
+): TradeAnalysis | InvalidTradeAnalysis {
+  const beforeLeague = analyzeLeagueTeams({
+    snapshot: inputs.snapshot,
+    picks: inputs.picks,
+    board: inputs.board,
+    sleeperPlayers: inputs.sleeperPlayers,
+  });
+  return analyzeTradeWithLeague(inputs, beforeLeague);
+}
+
+function isAutomaticTradeAsset(player: TeamPlayer) {
+  if (player.position === "K" || player.position === "DST") return false;
+  if (player.reserve) return false;
+  return !/(out|injured reserve|\bir\b|pup|suspend)/i.test(
+    player.injuryStatus,
+  );
+}
+
+function automaticAssetPool(team: TeamAnalysis) {
+  return team.players
+    .filter(isAutomaticTradeAsset)
+    .sort((left, right) => tradeAssetValue(right) - tradeAssetValue(left))
+    .slice(0, 7);
+}
+
+function suggestionLabel(analysis: TradeAnalysis): TradeSuggestion["label"] {
+  if (analysis.user.impactScore >= 1.5 && analysis.partner.impactScore >= 1.5) {
+    return "Mutual upgrade";
+  }
+  if (analysis.user.needsSolved.length) return "Solves a need";
+  if (analysis.fairnessScore >= 85) return "Fair value";
+  return "Best fit";
+}
+
+function partnerReason(analysis: TradeAnalysis) {
+  const partner = analysis.partner;
+  if (partner.needsSolved.length) {
+    return `They address ${partner.needsSolved.join(", ")} depth.`;
+  }
+  if (partner.starterDelta > 0) {
+    return `Their optimized lineup improves by ${signedNumber(partner.starterDelta)}.`;
+  }
+  if (partner.depthDelta > 0) {
+    return `Their bench depth improves by ${signedNumber(partner.depthDelta)}.`;
+  }
+  return `Their roster stays essentially even in a ${analysis.fairnessScore}% fair offer.`;
+}
+
+function signedNumber(value: number) {
+  return `${value > 0 ? "+" : ""}${round(value)}`;
+}
+
+/**
+ * Searches every opponent for responsible one-for-one offers. The finder only
+ * recommends healthy skill-position players, requires a positive user impact,
+ * and rejects offers that leave either lineup uncovered. Multi-player ideas
+ * remain available through the custom analyzer because roster-cut requirements
+ * need human context.
+ */
+export function findTradeSuggestions({
+  snapshot,
+  picks,
+  board,
+  sleeperPlayers,
+  userRosterId,
+  limit = 8,
+  teams,
+}: TradeSuggestionInputs): TradeSuggestion[] {
+  const beforeLeague = teams ??
+    analyzeLeagueTeams({
+      snapshot,
+      picks,
+      board,
+      sleeperPlayers,
+    });
+  const user = beforeLeague.find((team) => team.rosterId === userRosterId);
+  if (!user) return [];
+  const userAssets = automaticAssetPool(user);
+  const candidates: TradeSuggestion[] = [];
+
+  for (const partner of beforeLeague) {
+    if (partner.rosterId === userRosterId || !partner.players.length) continue;
+    const partnerAssets = automaticAssetPool(partner);
+    for (const outgoing of userAssets) {
+      const outgoingValue = tradeAssetValue(outgoing);
+      const matchedPartnerAssets = partnerAssets
+        .filter(
+          (incoming) =>
+            incoming.position !== outgoing.position &&
+            Math.abs(outgoingValue - tradeAssetValue(incoming)) <= 22,
+        )
+        .sort(
+          (left, right) =>
+            Math.abs(outgoingValue - tradeAssetValue(left)) -
+            Math.abs(outgoingValue - tradeAssetValue(right)),
+        )
+        .slice(0, 2);
+      for (const incoming of matchedPartnerAssets) {
+        const result = analyzeTradeWithLeague(
+          {
+            snapshot,
+            picks,
+            board,
+            sleeperPlayers,
+            userRosterId,
+            partnerRosterId: partner.rosterId,
+            userSends: [outgoing.sleeperId],
+            partnerSends: [incoming.sleeperId],
+          },
+          beforeLeague,
+        );
+        if (!result.valid) continue;
+        const uncovered = result.warnings.some((warning) =>
+          warning.includes("uncovered"),
+        );
+        if (
+          uncovered ||
+          result.user.impactScore < 0.3 ||
+          result.partner.impactScore < -1.5 ||
+          result.fairnessScore < 55
+        ) {
+          continue;
+        }
+        const opportunityScore = round(
+          result.user.impactScore * 3.2 +
+            result.partner.impactScore * 1.6 +
+            result.fairnessScore * 0.18 +
+            result.user.needsSolved.length * 5 +
+            result.partner.needsSolved.length * 3 -
+            result.warnings.length * 4,
+        );
+        candidates.push({
+          id: `${userRosterId}:${partner.rosterId}:${outgoing.sleeperId}:${incoming.sleeperId}`,
+          partnerRosterId: partner.rosterId,
+          partnerName: partner.teamName,
+          userSends: [outgoing],
+          partnerSends: [incoming],
+          analysis: result,
+          opportunityScore,
+          label: suggestionLabel(result),
+          partnerReason: partnerReason(result),
+        });
+      }
+    }
+  }
+
+  candidates.sort((left, right) => {
+    if (right.opportunityScore !== left.opportunityScore) {
+      return right.opportunityScore - left.opportunityScore;
+    }
+    return right.analysis.fairnessScore - left.analysis.fairnessScore;
+  });
+
+  const selected: TradeSuggestion[] = [];
+  const perPartner = new Map<number, number>();
+  for (const candidate of candidates) {
+    if ((perPartner.get(candidate.partnerRosterId) ?? 0) >= 2) continue;
+    if (
+      selected.some(
+        (item) =>
+          item.userSends[0]?.sleeperId === candidate.userSends[0]?.sleeperId &&
+          item.partnerSends[0]?.position === candidate.partnerSends[0]?.position,
+      )
+    ) {
+      continue;
+    }
+    selected.push(candidate);
+    perPartner.set(
+      candidate.partnerRosterId,
+      (perPartner.get(candidate.partnerRosterId) ?? 0) + 1,
+    );
+    if (selected.length >= limit) break;
+  }
+  return selected;
 }
