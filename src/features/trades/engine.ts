@@ -524,7 +524,9 @@ function analyzeTradeWithLeague({
     ),
   );
   const warnings: string[] = [];
-  const rosterLimit = snapshot.league.roster_positions.length;
+  const rosterLimit = snapshot.league.roster_positions.filter(
+    (position) => !["IR", "RESERVE", "TAXI"].includes(position.toUpperCase()),
+  ).length;
   for (const [team, label] of [
     [user, "Your team"],
     [partner, partner.teamName],
@@ -592,9 +594,12 @@ function isAutomaticTradeAsset(player: TeamPlayer) {
   );
 }
 
-function automaticAssetPool(team: TeamAnalysis) {
+function automaticAssetPool(team: TeamAnalysis, inactiveIds = new Set<string>()) {
   return team.players
-    .filter(isAutomaticTradeAsset)
+    .filter(
+      (player) =>
+        isAutomaticTradeAsset(player) && !inactiveIds.has(player.sleeperId),
+    )
     .sort((left, right) => tradeAssetValue(right) - tradeAssetValue(left))
     .slice(0, 7);
 }
@@ -614,27 +619,65 @@ function requiredDrops({
   outgoing,
   incomingCount,
   rosterLimit,
+  occupancy,
+  inactiveIds,
 }: {
   team: TeamAnalysis;
   outgoing: TeamPlayer[];
   incomingCount: number;
   rosterLimit: number;
+  occupancy: number;
+  inactiveIds: Set<string>;
 }) {
   const dropCount = Math.max(
     0,
-    team.players.length - outgoing.length + incomingCount - rosterLimit,
+    occupancy - outgoing.length + incomingCount - rosterLimit,
   );
   if (!dropCount) return [];
   const outgoingIds = new Set(outgoing.map((player) => player.sleeperId));
   const eligibleBench = team.bench.filter(
-    (player) => !player.reserve && !outgoingIds.has(player.sleeperId),
+    (player) =>
+      !player.reserve &&
+      !inactiveIds.has(player.sleeperId) &&
+      !outgoingIds.has(player.sleeperId),
   );
   const fallback = team.players.filter(
-    (player) => !player.reserve && !outgoingIds.has(player.sleeperId),
+    (player) =>
+      !player.reserve &&
+      !inactiveIds.has(player.sleeperId) &&
+      !outgoingIds.has(player.sleeperId),
   );
   return [...(eligibleBench.length >= dropCount ? eligibleBench : fallback)]
     .sort((left, right) => tradeAssetValue(left) - tradeAssetValue(right))
     .slice(0, dropCount);
+}
+
+function inactiveRosterIds(snapshot: LeagueSnapshot, rosterId: number) {
+  const roster = snapshot.rosters.find((item) => item.roster_id === rosterId);
+  return new Set([...(roster?.reserve ?? []), ...(roster?.taxi ?? [])].map(String));
+}
+
+export function activeRosterPlayerIds(
+  roster: Roster | undefined,
+  fallbackIds: string[],
+) {
+  const inactiveIds = new Set(
+    [...(roster?.reserve ?? []), ...(roster?.taxi ?? [])].map(String),
+  );
+  const ids = roster?.players?.length ? roster.players.map(String) : fallbackIds;
+  return uniqueIds(ids).filter((id) => !inactiveIds.has(id));
+}
+
+function activeRosterOccupancy(
+  snapshot: LeagueSnapshot,
+  rosterId: number,
+  fallbackTeam: TeamAnalysis,
+) {
+  const roster = snapshot.rosters.find((item) => item.roster_id === rosterId);
+  return activeRosterPlayerIds(
+    roster,
+    fallbackTeam.players.map((player) => player.sleeperId),
+  ).length;
 }
 
 function suggestionLabel(analysis: TradeAnalysis): TradeSuggestion["label"] {
@@ -683,9 +726,13 @@ export function findTradeSuggestions({
     });
   const user = beforeLeague.find((team) => team.rosterId === userRosterId);
   if (!user) return [];
-  const userAssets = automaticAssetPool(user);
+  const userInactiveIds = inactiveRosterIds(snapshot, userRosterId);
+  const userAssets = automaticAssetPool(user, userInactiveIds);
   const candidates: TradeSuggestion[] = [];
-  const rosterLimit = snapshot.league.roster_positions.length;
+  const rosterLimit = snapshot.league.roster_positions.filter(
+    (slot) => !["IR", "RESERVE", "TAXI"].includes(slot.toUpperCase()),
+  ).length;
+  const userOccupancy = activeRosterOccupancy(snapshot, userRosterId, user);
 
   const consider = ({
     partner,
@@ -696,25 +743,35 @@ export function findTradeSuggestions({
     userPackage: TeamPlayer[];
     partnerPackage: TeamPlayer[];
   }) => {
+    const partnerInactiveIds = inactiveRosterIds(snapshot, partner.rosterId);
+    const partnerOccupancy = activeRosterOccupancy(
+      snapshot,
+      partner.rosterId,
+      partner,
+    );
     const userDrops = requiredDrops({
       team: user,
       outgoing: userPackage,
       incomingCount: partnerPackage.length,
       rosterLimit,
+      occupancy: userOccupancy,
+      inactiveIds: userInactiveIds,
     });
     const partnerDrops = requiredDrops({
       team: partner,
       outgoing: partnerPackage,
       incomingCount: userPackage.length,
       rosterLimit,
+      occupancy: partnerOccupancy,
+      inactiveIds: partnerInactiveIds,
     });
     const expectedUserDrops = Math.max(
       0,
-      user.players.length - userPackage.length + partnerPackage.length - rosterLimit,
+      userOccupancy - userPackage.length + partnerPackage.length - rosterLimit,
     );
     const expectedPartnerDrops = Math.max(
       0,
-      partner.players.length - partnerPackage.length + userPackage.length - rosterLimit,
+      partnerOccupancy - partnerPackage.length + userPackage.length - rosterLimit,
     );
     if (
       userDrops.length !== expectedUserDrops ||
@@ -783,7 +840,10 @@ export function findTradeSuggestions({
 
   for (const partner of beforeLeague) {
     if (partner.rosterId === userRosterId || !partner.players.length) continue;
-    const partnerAssets = automaticAssetPool(partner);
+    const partnerAssets = automaticAssetPool(
+      partner,
+      inactiveRosterIds(snapshot, partner.rosterId),
+    );
     for (const outgoing of userAssets) {
       const outgoingValue = tradeAssetValue(outgoing);
       const matchedPartnerAssets = partnerAssets
