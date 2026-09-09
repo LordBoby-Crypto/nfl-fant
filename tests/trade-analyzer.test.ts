@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzeTrade } from "../src/features/trades/engine.ts";
+import {
+  analyzeTrade,
+  findTradeSuggestions,
+} from "../src/features/trades/engine.ts";
 import type { PlayerIntelligence } from "../src/features/player-intelligence/model.ts";
 import type { LeagueSnapshot, SleeperPlayer } from "../src/types.ts";
 
@@ -281,4 +284,30 @@ test("multi-player offers preserve unique rosters and package evidence", () => {
   assert.equal(result.userPackageValue > 0, true);
   assert.equal(result.partnerPackageValue > 0, true);
   assert.equal(result.fairnessScore >= 0 && result.fairnessScore <= 100, true);
+});
+
+test("automatic trade finder scans opponents and returns responsible offers", () => {
+  const suggestions = findTradeSuggestions({
+    snapshot: snapshot(),
+    picks: [],
+    board: board(),
+    sleeperPlayers: sleeperPlayers(),
+    userRosterId: 1,
+  });
+  assert.equal(suggestions.length > 0, true);
+  const best = suggestions[0];
+  assert.equal(best.analysis.valid, true);
+  assert.equal(best.analysis.user.impactScore > 0, true);
+  assert.equal(best.analysis.partner.impactScore >= -1.5, true);
+  assert.equal(best.analysis.fairnessScore >= 55, true);
+  assert.equal(
+    [...best.userSends, ...best.partnerSends].some(
+      (player) => player.position === "K" || player.position === "DST",
+    ),
+    false,
+  );
+  assert.equal(
+    best.analysis.warnings.some((warning) => warning.includes("uncovered")),
+    false,
+  );
 });
