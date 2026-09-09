@@ -106,6 +106,17 @@ test("questionable tags do not bench a clearly higher weekly projection", () => 
   assert.equal(result.lineup[0].change, "keep");
 });
 
+test("weekly optimizer never compares ECR fallback points to weekly fantasy points", () => {
+  const projected = teamPlayer("1", "WR", 15, true);
+  const missingProjection = teamPlayer("2", "WR", 0, false);
+  missingProjection.projectedPoints = null;
+  missingProjection.ecr = 1;
+  projected.ecr = 200;
+  const result = optimizeLineup([missingProjection, projected], ["WR", "BN"]);
+  assert.equal(result.lineup[0].player?.id, "1");
+  assert.equal(result.lineup[0].change, "keep");
+});
+
 test("FantasyPros ids cannot overwrite a different Sleeper player", () => {
   const snapshot = {
     league: {

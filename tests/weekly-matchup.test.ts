@@ -233,6 +233,8 @@ test("weekly matchup uses the published opponent and weekly projections", () => 
   assert.equal(model.matchup?.userPoints, 12);
   assert.equal(model.matchup?.opponentPoints, 15);
   assert.equal(model.matchup?.projectionSource, "weekly");
+  assert.equal(model.matchup?.userRosRank, 1);
+  assert.equal(model.matchup?.opponentRosRank, 2);
   assert.equal((model.matchup?.userWinProbability ?? 100) < 50, true);
 });
 

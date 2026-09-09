@@ -12,6 +12,8 @@ export interface WeeklyMatchupSummary {
   userPoints: number;
   opponentPoints: number;
   userWinProbability: number;
+  userRosRank: number;
+  opponentRosRank: number;
   projectionSource: "weekly" | "roster strength";
 }
 
@@ -541,6 +543,8 @@ export function buildWeeklyDecisionModel({
                 rosUser.strength.overall - rosOpponent.strength.overall,
                 12,
               ),
+          userRosRank: rosUser.strength.rank,
+          opponentRosRank: rosOpponent.strength.rank,
           projectionSource: hasWeeklyProjection
             ? "weekly"
             : "roster strength",

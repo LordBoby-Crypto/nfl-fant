@@ -104,18 +104,34 @@ function healthPenalty(player: TeamPlayer) {
   return 0;
 }
 
-function playerLineupValue(player: TeamPlayer) {
-  const projection = player.projectedPoints;
-  const market = player.ecr === null ? 0 : Math.max(0, 260 - player.ecr);
+function lineupAvailability(player: TeamPlayer) {
   const context = player.injuryStatus.toLocaleLowerCase();
-  const unavailable =
+  if (
     player.reserve ||
-    /(out|injured reserve|\bir\b|pup|suspend)/.test(context);
-  const doubtful = /doubtful/.test(context);
+    /(out|injured reserve|\bir\b|pup|suspend)/.test(context)
+  ) return 2;
+  return /doubtful/.test(context) ? 1 : 0;
+}
 
-  // Weekly projections already represent expected output. Questionable and
-  // limited tags belong in injury alerts, not as a hidden 40-point penalty.
-  return (projection ?? market) - (unavailable ? 10_000 : doubtful ? 25 : 0);
+function compareLineupPlayers(left: TeamPlayer, right: TeamPlayer) {
+  const availability = lineupAvailability(left) - lineupAvailability(right);
+  if (availability) return availability;
+
+  // A weekly projection and season-long ECR are different units. Comparing
+  // them as raw numbers can start an unprojected player over a valid weekly
+  // option (for example, 260 - ECR versus 15 fantasy points).
+  if (left.projectedPoints !== null && right.projectedPoints !== null) {
+    const projection = right.projectedPoints - left.projectedPoints;
+    if (projection) return projection;
+  } else if (left.projectedPoints !== null) {
+    return -1;
+  } else if (right.projectedPoints !== null) {
+    return 1;
+  }
+
+  const leftEcr = left.ecr ?? Number.MAX_SAFE_INTEGER;
+  const rightEcr = right.ecr ?? Number.MAX_SAFE_INTEGER;
+  return leftEcr - rightEcr || left.name.localeCompare(right.name);
 }
 
 function percentile(value: number, values: number[], descending = false) {
@@ -259,9 +275,7 @@ export function optimizeLineup(
 ) {
   const slots = lineupSlots(rosterPositions);
   const used = new Set<string>();
-  const ordered = [...players].sort(
-    (left, right) => playerLineupValue(right) - playerLineupValue(left),
-  );
+  const ordered = [...players].sort(compareLineupPlayers);
   const fixed = slots.filter((slot) => slot.slot !== "FLEX");
   const flex = slots.filter((slot) => slot.slot === "FLEX");
 
