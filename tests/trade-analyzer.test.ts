@@ -26,6 +26,9 @@ const fixturePlayers: FixturePlayer[] = [
   { id: "u-te", name: "User Tight End", position: "TE", projection: 166, ecr: 76, rosterId: 1 },
   { id: "u-k", name: "User Kicker", position: "K", projection: 112, ecr: 205, rosterId: 1 },
   { id: "u-dst", name: "User Defense", position: "DST", projection: 108, ecr: 198, rosterId: 1 },
+  { id: "u-b1", name: "User Bench Back", position: "RB", projection: 72, ecr: 220, rosterId: 1 },
+  { id: "u-b2", name: "User Bench Receiver", position: "WR", projection: 220, ecr: 55, rosterId: 1 },
+  { id: "u-b3", name: "User Bench Tight End", position: "TE", projection: 64, ecr: 232, rosterId: 1 },
   { id: "p-qb", name: "Partner Quarterback", position: "QB", projection: 305, ecr: 28, rosterId: 2 },
   { id: "p-rb1", name: "Partner Alpha Back", position: "RB", projection: 284, ecr: 9, rosterId: 2 },
   { id: "p-rb2", name: "Partner Back Two", position: "RB", projection: 258, ecr: 17, rosterId: 2 },
@@ -35,6 +38,9 @@ const fixturePlayers: FixturePlayer[] = [
   { id: "p-te", name: "Partner Tight End", position: "TE", projection: 160, ecr: 83, rosterId: 2 },
   { id: "p-k", name: "Partner Kicker", position: "K", projection: 110, ecr: 208, rosterId: 2 },
   { id: "p-dst", name: "Partner Defense", position: "DST", projection: 106, ecr: 201, rosterId: 2 },
+  { id: "p-b1", name: "Partner Bench Back", position: "RB", projection: 70, ecr: 222, rosterId: 2 },
+  { id: "p-b2", name: "Partner Bench Receiver", position: "WR", projection: 66, ecr: 228, rosterId: 2 },
+  { id: "p-b3", name: "Partner Bench Tight End", position: "TE", projection: 62, ecr: 234, rosterId: 2 },
 ];
 
 function snapshot(): LeagueSnapshot {
@@ -307,8 +313,10 @@ test("automatic trade finder scans opponents and returns responsible offers", ()
   );
   assert.equal(best.analysis.fairnessScore >= 55, true);
   assert.equal(
-    [...best.userSends, ...best.partnerSends].some(
-      (player) => player.position === "K" || player.position === "DST",
+    suggestions.some((suggestion) =>
+      [...suggestion.userSends, ...suggestion.partnerSends].some(
+        (player) => player.position === "K" || player.position === "DST",
+      ),
     ),
     false,
   );
@@ -316,4 +324,42 @@ test("automatic trade finder scans opponents and returns responsible offers", ()
     best.analysis.warnings.some((warning) => warning.includes("uncovered")),
     false,
   );
+});
+
+test("automatic finder evaluates uneven packages and accounts for roster cuts", () => {
+  const fullSnapshot = snapshot();
+  const suggestions = findTradeSuggestions({
+    snapshot: fullSnapshot,
+    picks: [],
+    board: board(),
+    sleeperPlayers: sleeperPlayers(),
+    userRosterId: 1,
+    limit: 30,
+  });
+  const packages = suggestions.filter((suggestion) => suggestion.format !== "one-for-one");
+  assert.equal(packages.length > 0, true);
+  for (const suggestion of packages) {
+    assert.equal(
+      suggestion.format === "two-for-one"
+        ? suggestion.partnerDrops.length
+        : suggestion.userDrops.length,
+      1,
+    );
+    assert.equal(
+      suggestion.analysis.warnings.some(
+        (warning) => warning.includes("uncovered") || warning.includes("over the"),
+      ),
+      false,
+    );
+    assert.equal(
+      suggestion.analysis.user.after.players.length <=
+        fullSnapshot.league.roster_positions.length,
+      true,
+    );
+    assert.equal(
+      suggestion.analysis.partner.after.players.length <=
+        fullSnapshot.league.roster_positions.length,
+      true,
+    );
+  }
 });

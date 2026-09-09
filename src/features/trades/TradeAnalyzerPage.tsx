@@ -1,8 +1,9 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   AlertTriangle,
   ArrowLeftRight,
   ArrowRight,
+  BellRing,
   Check,
   CircleAlert,
   Gauge,
@@ -18,6 +19,7 @@ import {
   TrendingUp,
   UsersRound,
   WalletCards,
+  X,
 } from "lucide-react";
 import type { useDraftPicks } from "../../hooks/useDraftPicks";
 import { useSleeperPlayers } from "../../hooks/useSleeperPlayers";
@@ -36,6 +38,13 @@ import {
   type TradeSuggestion,
   type TradeTeamImpact,
 } from "./engine";
+import {
+  detectTradeOpportunityAlert,
+  tradeOpportunityIds,
+  tradeOpportunityStorageKey,
+  tradeRosterFingerprint,
+  type TradeOpportunityAlert,
+} from "./opportunityAlerts";
 
 type DraftPickState = ReturnType<typeof useDraftPicks>;
 type WarRoomState = ReturnType<typeof useWarRoom>;
@@ -331,9 +340,51 @@ function TeamImpactCard({
   );
 }
 
-function TradeResultPanel({ result }: { result: TradeAnalysis }) {
+function PlayerPackage({ players }: { players: TeamPlayer[] }) {
+  return (
+    <span className="trade-package-player-list">
+      {players.map((player) => (
+        <span key={player.sleeperId}>
+          <b className={`position-mark position-${player.position.toLowerCase()}`}>
+            {player.position}
+          </b>
+          <strong>{player.name}</strong>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function TradeResultPanel({
+  result,
+  suggestion,
+}: {
+  result: TradeAnalysis;
+  suggestion?: TradeSuggestion;
+}) {
   return (
     <section className={`trade-result verdict-${result.verdict}`}>
+      {suggestion ? (
+        <div className="trade-package-summary">
+          <span>
+            <small>You send</small>
+            <PlayerPackage players={suggestion.userSends} />
+          </span>
+          <ArrowLeftRight />
+          <span>
+            <small>You receive</small>
+            <PlayerPackage players={suggestion.partnerSends} />
+          </span>
+          {suggestion.userDrops.length || suggestion.partnerDrops.length ? (
+            <p>
+              <AlertTriangle />
+              {suggestion.userDrops.length
+                ? `You would need to drop ${suggestion.userDrops.map((player) => player.name).join(", ")}.`
+                : `${suggestion.partnerName} would need to drop ${suggestion.partnerDrops.map((player) => player.name).join(", ")}.`}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <header className="trade-verdict">
         <span className="trade-verdict-icon">
           {result.verdict === "helps-both" || result.verdict === "balanced" ? (
@@ -418,8 +469,7 @@ function TradeOpportunityCard({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const outgoing = suggestion.userSends[0];
-  const incoming = suggestion.partnerSends[0];
+  const formatLabel = suggestion.format.replaceAll("-", " ");
   return (
     <button
       className={`trade-opportunity-card ${selected ? "is-selected" : ""}`}
@@ -429,7 +479,7 @@ function TradeOpportunityCard({
     >
       <header>
         <span>
-          <small>#{rank} · {suggestion.label}</small>
+          <small>#{rank} · {formatLabel} · {suggestion.label}</small>
           <strong>{suggestion.partnerName}</strong>
         </span>
         <span className="trade-opportunity-fairness">
@@ -440,20 +490,21 @@ function TradeOpportunityCard({
       <div className="trade-opportunity-swap">
         <span>
           <small>You send</small>
-          <b className={`position-mark position-${outgoing.position.toLowerCase()}`}>
-            {outgoing.position}
-          </b>
-          <strong>{outgoing.name}</strong>
+          <PlayerPackage players={suggestion.userSends} />
         </span>
         <ArrowRight />
         <span>
           <small>You receive</small>
-          <b className={`position-mark position-${incoming.position.toLowerCase()}`}>
-            {incoming.position}
-          </b>
-          <strong>{incoming.name}</strong>
+          <PlayerPackage players={suggestion.partnerSends} />
         </span>
       </div>
+      {suggestion.userDrops.length || suggestion.partnerDrops.length ? (
+        <p className="trade-opportunity-drop">
+          {suggestion.userDrops.length
+            ? `Your cut: ${suggestion.userDrops.map((player) => player.name).join(", ")}`
+            : `Their cut: ${suggestion.partnerDrops.map((player) => player.name).join(", ")}`}
+        </p>
+      ) : null}
       <footer>
         <span><TrendingUp /> Your roster {signed(suggestion.analysis.user.impactScore, 1)}</span>
         <span><Handshake /> {suggestion.partnerReason}</span>
@@ -482,12 +533,13 @@ function AutomaticTradeFinder({
           <h2>Best trades for your roster</h2>
           <p>
             Ranked after rebuilding both teams&apos; optimal lineup, depth chart and
-            roster needs. Kickers, defenses and unavailable players are excluded.
+            roster needs. One-for-one and package offers include any required cut.
           </p>
         </span>
         <span className="trade-finder-count">
           <strong>{partnerCount}</strong>
           <small>teams scanned</small>
+          <em><BellRing /> roster alerts armed</em>
         </span>
       </header>
       {suggestions.length ? (
@@ -506,11 +558,11 @@ function AutomaticTradeFinder({
         <div className="trade-finder-empty">
           <ShieldCheck />
           <span>
-            <strong>No responsible one-for-one offer found</strong>
+            <strong>No responsible trade package found</strong>
             <p>
               The model will not manufacture a recommendation that hurts the
-              other roster or leaves a lineup spot empty. Try the custom analyzer
-              for a multi-player package.
+              other roster, hides a required cut, or leaves a lineup spot empty.
+              The scan will rebuild after the next Sleeper roster change.
             </p>
           </span>
         </div>
@@ -533,6 +585,7 @@ export function TradeAnalyzerPage({
   onRefresh: () => void;
 }) {
   const userRoster = getUserRoster(snapshot);
+  const userRosterId = userRoster?.roster_id ?? 0;
   const [partnerRosterId, setPartnerRosterId] = useState(0);
   const [userSends, setUserSends] = useState<string[]>([]);
   const [partnerSends, setPartnerSends] = useState<string[]>([]);
@@ -543,6 +596,8 @@ export function TradeAnalyzerPage({
     "automatic",
   );
   const [selectedSuggestionId, setSelectedSuggestionId] = useState("");
+  const [opportunityAlert, setOpportunityAlert] =
+    useState<TradeOpportunityAlert | null>(null);
   const playerIds = useMemo(
     () => [
       ...snapshot.rosters.flatMap((roster) => roster.players ?? []),
@@ -607,6 +662,76 @@ export function TradeAnalyzerPage({
       warRoom.board,
     ],
   );
+  const rosterFingerprint = useMemo(
+    () => tradeRosterFingerprint(snapshot),
+    [snapshot],
+  );
+  const opportunityIds = useMemo(
+    () => tradeOpportunityIds(suggestions),
+    [suggestions],
+  );
+  useEffect(() => {
+    if (!warRoom.isUnlocked || isLoading || !userRosterId) return;
+    const storageKey = tradeOpportunityStorageKey(
+      snapshot.league.league_id,
+      userRosterId,
+    );
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const previous = raw
+        ? (JSON.parse(raw) as {
+            rosterFingerprint?: unknown;
+            opportunityIds?: unknown;
+            savedAt?: unknown;
+          })
+        : null;
+      const safePrevious =
+        previous &&
+        typeof previous.rosterFingerprint === "string" &&
+        Array.isArray(previous.opportunityIds)
+          ? {
+              rosterFingerprint: previous.rosterFingerprint,
+              opportunityIds: previous.opportunityIds.filter(
+                (value): value is string => typeof value === "string",
+              ),
+              savedAt:
+                typeof previous.savedAt === "number" ? previous.savedAt : 0,
+            }
+          : null;
+      const alert = detectTradeOpportunityAlert(
+        safePrevious,
+        rosterFingerprint,
+        opportunityIds,
+      );
+      setOpportunityAlert(alert);
+      if (alert?.opportunityIds[0]) {
+        setSelectedSuggestionId(alert.opportunityIds[0]);
+        setAnalysisMode("automatic");
+      }
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          rosterFingerprint,
+          opportunityIds,
+          savedAt: Date.now(),
+        }),
+      );
+      if (alert && "Notification" in window && Notification.permission === "granted") {
+        new Notification("New War Room trade opportunity", {
+          body: `${alert.count} new viable package${alert.count === 1 ? "" : "s"} appeared after a Sleeper roster change.`,
+        });
+      }
+    } catch {
+      // Private browsing can block persistence; the live finder still works.
+    }
+  }, [
+    isLoading,
+    opportunityIds,
+    rosterFingerprint,
+    snapshot.league.league_id,
+    userRosterId,
+    warRoom.isUnlocked,
+  ]);
   const selectedSuggestion =
     suggestions.find((item) => item.id === selectedSuggestionId) ??
     suggestions[0] ??
@@ -757,6 +882,24 @@ export function TradeAnalyzerPage({
 
       {warRoom.isUnlocked && rosterHasPlayers && !isLoading && userTeam && partnerTeam ? (
         <>
+          {opportunityAlert ? (
+            <section className="trade-opportunity-alert" role="status">
+              <BellRing />
+              <span>
+                <strong>New trade opportunity after a Sleeper roster change</strong>
+                <small>
+                  {opportunityAlert.count} newly viable package{opportunityAlert.count === 1 ? "" : "s"} found. The best new option is selected below.
+                </small>
+              </span>
+              <button
+                type="button"
+                aria-label="Dismiss trade opportunity alert"
+                onClick={() => setOpportunityAlert(null)}
+              >
+                <X />
+              </button>
+            </section>
+          ) : null}
           <AutomaticTradeFinder
             suggestions={suggestions}
             partnerCount={partners.length}
@@ -765,7 +908,10 @@ export function TradeAnalyzerPage({
           />
 
           {analysisMode === "automatic" && selectedSuggestion ? (
-            <TradeResultPanel result={selectedSuggestion.analysis} />
+            <TradeResultPanel
+              result={selectedSuggestion.analysis}
+              suggestion={selectedSuggestion}
+            />
           ) : null}
 
           <details className="trade-custom-analyzer">
