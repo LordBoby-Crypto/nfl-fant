@@ -17503,6 +17503,11 @@ button:focus-visible {
   line-height: 1.45;
 }
 
+.waiver-player-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 61px;
+}
+
 .waiver-evidence {
   grid-template-columns: repeat(4, 1fr);
 }
