@@ -59,7 +59,7 @@ export function buildPostDraftDataHealth({
   dataError: string | null;
   now?: number;
 }): PostDraftDataHealth {
-  const rankingsAt = timestamp(board?.datasetFetchedAt.rankings ?? board?.fetchedAt);
+  const rankingsAt = timestamp(board?.datasetFetchedAt.rankings);
   const projectionsAt = timestamp(board?.datasetFetchedAt.projections);
   const weekOneAt = timestamp(weeklyBoard?.datasetFetchedAt.projections);
   const items: DataHealthItem[] = [
@@ -81,7 +81,12 @@ export function buildPostDraftDataHealth({
       id: "rankings",
       label: "FantasyPros consensus",
       fetchedAt: rankingsAt,
-      status: sourceStatus(rankingsAt, 24 * 60 * 60_000, now, dataError),
+      status: sourceStatus(
+        rankingsAt,
+        24 * 60 * 60_000,
+        now,
+        board?.datasetErrors.rankings ?? dataError,
+      ),
       detail: board?.datasetErrors.rankings ?? "Rest-of-season rank and market baselines.",
     },
     {
