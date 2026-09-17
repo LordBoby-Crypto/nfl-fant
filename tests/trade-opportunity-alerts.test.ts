@@ -78,6 +78,16 @@ test("trade alerts identify the exact changed rosters", () => {
   );
 });
 
+test("reserve-only moves still identify the changed roster", () => {
+  assert.deepEqual(
+    changedTradeRosters(
+      { "7": ["roster:player-a"] },
+      { "7": ["reserve:player-a", "roster:player-a"] },
+    ),
+    [7],
+  );
+});
+
 test("a roster change without a new responsible offer stays quiet", () => {
   assert.equal(
     detectTradeOpportunityAlert(
