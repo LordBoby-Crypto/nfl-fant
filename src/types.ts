@@ -86,6 +86,12 @@ export interface SleeperPlayer {
   team: string | null;
   injury_status: string | null;
   status: string | null;
+  active?: boolean | null;
+  depth_chart_position?: string | null;
+  depth_chart_order?: number | null;
+  search_rank?: number | null;
+  practice_participation?: string | null;
+  practice_description?: string | null;
   age: number | null;
   years_exp: number | null;
 }

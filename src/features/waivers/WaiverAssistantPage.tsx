@@ -246,6 +246,14 @@ function RecommendationDetail({
 }: {
   recommendation: WaiverRecommendation;
 }) {
+  const acquisitionDecision =
+    recommendation.actionVerdict === "Hold"
+      ? "Do not add"
+      : recommendation.actionVerdict === "Consider"
+        ? "Review first"
+        : recommendation.availability === "Free agent"
+          ? "Add now"
+          : `$${recommendation.faab.target}`;
   return (
     <aside className="waiver-detail">
       <header>
@@ -270,9 +278,7 @@ function RecommendationDetail({
             {recommendation.availability === "Free agent" ? "Acquisition" : "Recommended bid"}
           </small>
           <strong>
-            {recommendation.availability === "Free agent"
-              ? "Add now"
-              : `$${recommendation.faab.target}`}
+            {acquisitionDecision}
           </strong>
         </span>
         <span>
