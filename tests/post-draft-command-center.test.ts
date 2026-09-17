@@ -69,6 +69,26 @@ test("missing projections cannot masquerade as healthy data", () => {
   assert.equal(health.coverage.available, false);
 });
 
+test("a missing rankings dataset cannot borrow another source timestamp", () => {
+  const missingRankings = board({
+    fetchedAt: "2026-09-17T11:59:00Z",
+    datasetFetchedAt: { projections: "2026-09-17T11:59:00Z" },
+    datasetErrors: { rankings: "FantasyPros rankings did not load." },
+  });
+  const health = buildPostDraftDataHealth({
+    snapshotFetchedAt: NOW - 60_000,
+    picksFetchedAt: NOW - 60_000,
+    picksError: null,
+    board: missingRankings,
+    weeklyBoard: board(),
+    dataError: null,
+    now: NOW,
+  });
+  const rankings = health.items.find((item) => item.id === "rankings");
+  assert.equal(rankings?.fetchedAt, null);
+  assert.equal(rankings?.status, "unavailable");
+});
+
 test("post-draft command center creates one direct action per management area", () => {
   const report = {
     weekOneLineup: [
