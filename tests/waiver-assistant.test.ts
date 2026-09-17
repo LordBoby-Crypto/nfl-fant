@@ -43,6 +43,7 @@ function sleeper(
   id: string,
   name: string,
   position: string,
+  overrides: Partial<SleeperPlayer> = {},
 ): SleeperPlayer {
   const [first_name, ...last] = name.split(" ");
   return {
@@ -55,8 +56,13 @@ function sleeper(
     team: "DAL",
     injury_status: null,
     status: "Active",
+    active: true,
+    depth_chart_position: position,
+    depth_chart_order: 1,
+    search_rank: 100,
     age: 25,
     years_exp: 3,
+    ...overrides,
   };
 }
 
@@ -448,4 +454,113 @@ test("the available-player board is not capped at sixty players", () => {
     result.recommendations.some((item) => item.player.name === "Available Player 74"),
     true,
   );
+});
+
+test("an unverified kicker cannot replace the roster's confirmed starter", () => {
+  const board = rosterBoard.map((player) =>
+    player.name === "Roster Player 6"
+      ? intelligence("mevis", "Harrison Mevis", "K", 145, 145)
+      : player,
+  );
+  const players = {
+    ...sleeperPlayers,
+    "6": sleeper("6", "Harrison Mevis", "K", {
+      team: "LAR",
+      depth_chart_position: "K",
+      depth_chart_order: 1,
+    }),
+    matsuzawa: sleeper("matsuzawa", "Kansei Matsuzawa", "K", {
+      team: "LV",
+      depth_chart_position: null,
+      depth_chart_order: null,
+      search_rank: 668,
+    }),
+  };
+  const result = buildWaiverAssistant({
+    snapshot: snapshot(),
+    picks: [],
+    board: [
+      ...board,
+      intelligence("matsuzawa", "Kansei Matsuzawa", "K", 210, 80),
+    ],
+    sleeperPlayers: players,
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  const candidate = result.recommendations.find(
+    (item) => item.player.name === "Kansei Matsuzawa",
+  );
+  assert.equal(candidate?.actionVerdict, "Hold");
+  assert.equal(candidate?.priority, "Watch");
+  assert.match(candidate?.warning ?? "", /starting kicker/i);
+});
+
+test("a backup tight end cannot consume a capped TE spot or trigger a WR drop", () => {
+  const league = snapshot();
+  league.league.settings.position_limit_te = 1;
+  const result = buildWaiverAssistant({
+    snapshot: league,
+    picks: [],
+    board: [
+      ...rosterBoard,
+      intelligence("farrell", "Luke Farrell", "TE", 85, 210),
+    ],
+    sleeperPlayers: {
+      ...sleeperPlayers,
+      farrell: sleeper("farrell", "Luke Farrell", "TE", {
+        team: "SF",
+        depth_chart_position: "TE",
+        depth_chart_order: 2,
+        search_rank: 491,
+      }),
+    },
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  const candidate = result.recommendations.find(
+    (item) => item.player.name === "Luke Farrell",
+  );
+  assert.equal(candidate?.actionVerdict, "Hold");
+  assert.notEqual(candidate?.drop?.player.position, "WR");
+  assert.match(candidate?.warning ?? "", /backup|depth chart/i);
+});
+
+test("a temporary quarterback does not replace another position when QB is full", () => {
+  const league = snapshot();
+  league.league.settings.position_limit_qb = 1;
+  const result = buildWaiverAssistant({
+    snapshot: league,
+    picks: [],
+    board: [
+      ...rosterBoard,
+      intelligence("lock", "Drew Lock", "QB", 330, 190),
+    ],
+    sleeperPlayers: {
+      ...sleeperPlayers,
+      lock: sleeper("lock", "Drew Lock", "QB", {
+        team: "SEA",
+        depth_chart_position: "QB",
+        depth_chart_order: 1,
+        search_rank: 691,
+      }),
+      darnold: sleeper("darnold", "Sam Darnold", "QB", {
+        team: "SEA",
+        injury_status: "Out",
+        depth_chart_position: "QB",
+        depth_chart_order: 2,
+        search_rank: 93,
+      }),
+    },
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  const candidate = result.recommendations.find(
+    (item) => item.player.name === "Drew Lock",
+  );
+  assert.equal(candidate?.actionVerdict, "Hold");
+  assert.notEqual(candidate?.drop?.player.position, "WR");
+  assert.match(candidate?.warning ?? "", /temporary|Sam Darnold/i);
 });

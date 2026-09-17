@@ -172,12 +172,20 @@ function injuryPenalty(player: PlayerIntelligence) {
   return 0;
 }
 
-function playerValue(player: Pick<PlayerIntelligence, "ecr" | "projectedPoints">) {
-  const market = player.ecr === null ? 28 : Math.max(0, 102 - player.ecr * 0.42);
-  const projection = player.projectedPoints === null
-    ? market
-    : Math.min(100, Math.max(0, player.projectedPoints / 3.5));
-  return projection * 0.7 + market * 0.3;
+type WaiverValuedPlayer =
+  | Pick<PlayerIntelligence, "ecr" | "leagueRank" | "projectedPoints">
+  | Pick<TeamPlayer, "ecr" | "projectedPoints" | "intelligence">;
+
+function playerValue(player: WaiverValuedPlayer) {
+  const intelligence = "intelligence" in player ? player.intelligence : player;
+  const rank = intelligence?.leagueRank ?? player.ecr;
+
+  // Raw season points are not comparable across positions. A replacement QB
+  // can outscore a useful WR while adding no value in a one-QB lineup. Use the
+  // league-adjusted overall rank when available, with ECR as the safe fallback.
+  return rank === null || rank === undefined
+    ? 28
+    : Math.max(0, 104 - rank * 0.46);
 }
 
 function depthFor(team: TeamAnalysis | null, position: WaiverPosition) {
@@ -360,6 +368,7 @@ function sleeperPosition(player: SleeperPlayer) {
 interface SleeperPlayerIndex {
   byIdentity: Map<string, [string, SleeperPlayer]>;
   defensesByTeam: Map<string, [string, SleeperPlayer]>;
+  byTeamPosition: Map<string, Array<[string, SleeperPlayer]>>;
 }
 
 function buildSleeperPlayerIndex(
@@ -367,15 +376,22 @@ function buildSleeperPlayerIndex(
 ): SleeperPlayerIndex {
   const byIdentity = new Map<string, [string, SleeperPlayer]>();
   const defensesByTeam = new Map<string, [string, SleeperPlayer]>();
+  const byTeamPosition = new Map<string, Array<[string, SleeperPlayer]>>();
   for (const [id, player] of Object.entries(sleeperPlayers)) {
     const position = sleeperPosition(player);
     const name = normalizePlayerName(sleeperName(player));
     if (name && position) byIdentity.set(`${name}:${position}`, [id, player]);
+    if (position && player.team) {
+      const key = `${player.team.toUpperCase()}:${position}`;
+      const current = byTeamPosition.get(key) ?? [];
+      current.push([id, player]);
+      byTeamPosition.set(key, current);
+    }
     if (position === "DST" && player.team) {
       defensesByTeam.set(normalizePlayerName(player.team), [id, player]);
     }
   }
-  return { byIdentity, defensesByTeam };
+  return { byIdentity, defensesByTeam, byTeamPosition };
 }
 
 function sleeperMatches(
@@ -389,6 +405,78 @@ function sleeperMatches(
   if (direct) return direct;
   if (targetPosition !== "DST") return null;
   return index.defensesByTeam.get(normalizePlayerName(boardPlayer.team)) ?? null;
+}
+
+function positionLimit(
+  settings: LeagueSnapshot["league"]["settings"],
+  position: WaiverPosition,
+) {
+  const suffix = position === "DST" ? "def" : position.toLowerCase();
+  const limit = settings[`position_limit_${suffix}`];
+  return typeof limit === "number" && limit > 0 ? limit : null;
+}
+
+function returningQuarterback(
+  sleeperId: string,
+  player: SleeperPlayer,
+  index: SleeperPlayerIndex,
+) {
+  if (!player.team || sleeperPosition(player) !== "QB") return null;
+  const candidateRank = player.search_rank;
+  if (typeof candidateRank !== "number") return null;
+  return (index.byTeamPosition.get(`${player.team.toUpperCase()}:QB`) ?? [])
+    .filter(([id]) => id !== sleeperId)
+    .map(([, teammate]) => teammate)
+    .find((teammate) => {
+      const injury = `${teammate.injury_status ?? ""} ${teammate.status ?? ""}`;
+      return (
+        /(out|injured reserve|\bir\b|pup)/i.test(injury) &&
+        typeof teammate.search_rank === "number" &&
+        teammate.search_rank + 75 < candidateRank
+      );
+    }) ?? null;
+}
+
+function candidateRoleWarning({
+  position,
+  sleeperMatch,
+  sleeperIndex,
+  impact,
+}: {
+  position: WaiverPosition;
+  sleeperMatch: [string, SleeperPlayer] | null;
+  sleeperIndex: SleeperPlayerIndex;
+  impact: PairImpact | null;
+}) {
+  if (!sleeperMatch) {
+    return "Sleeper could not verify this player's current NFL roster role. Keep this player on the watch list.";
+  }
+  const [sleeperId, sleeper] = sleeperMatch;
+  const status = sleeper.status?.trim() ?? "";
+  if (sleeper.active === false || (status && status.toLowerCase() !== "active")) {
+    return `${sleeperName(sleeper)} is listed by Sleeper as ${status || "inactive"}, not an active add.`;
+  }
+  if (position !== "DST" && !sleeper.team) {
+    return `${sleeperName(sleeper)} is not attached to an NFL active roster in Sleeper.`;
+  }
+  if (position === "K" && sleeper.depth_chart_order !== 1) {
+    return `Sleeper does not list ${sleeperName(sleeper)} as the team's starting kicker. Do not replace a verified K1.`;
+  }
+  if (
+    (position === "QB" || position === "TE") &&
+    typeof sleeper.depth_chart_order === "number" &&
+    sleeper.depth_chart_order > 1 &&
+    (impact?.starterGain ?? 0) <= 0
+  ) {
+    return `${sleeperName(sleeper)} is ${position}${sleeper.depth_chart_order} on Sleeper's depth chart and does not improve the starting lineup.`;
+  }
+  if (position === "QB" && sleeper.depth_chart_order === 1) {
+    const returning = returningQuarterback(sleeperId, sleeper, sleeperIndex);
+    if (returning) {
+      return `${sleeperName(sleeper)} has temporary-role risk while ${sleeperName(returning)} is unavailable. Do not sacrifice another position for a short-term QB.`;
+    }
+  }
+  return null;
 }
 
 function availabilityFor({
@@ -631,8 +719,19 @@ export function buildWaiverAssistant({
         trends.byName.get(normalizePlayerName(player.name)) ??
         0;
       const candidate = candidateTeamPlayer(player, sleeperId);
+      const limit = positionLimit(snapshot.league.settings, position);
+      const positionCount = team.players.filter(
+        (rosterPlayer) => !rosterPlayer.reserve && rosterPlayer.position === position,
+      ).length;
+      const requiresSamePositionDrop =
+        limit !== null && positionCount >= limit;
       const dropCandidates: Array<TeamPlayer | null> =
-        rosterSpotsOpen > 0
+        requiresSamePositionDrop
+          ? team.players.filter(
+            (rosterPlayer) =>
+              !rosterPlayer.reserve && rosterPlayer.position === position,
+          )
+          : rosterSpotsOpen > 0
           ? [null]
           : team.players.filter((candidate) => !candidate.reserve);
       const impacts = dropCandidates.flatMap((drop): PairImpact[] => {
@@ -656,6 +755,12 @@ export function buildWaiverAssistant({
       const starterGain = bestImpact?.starterGain ?? 0;
       const projectionGain = bestImpact?.projectionGain ?? null;
       const benchGain = bestImpact?.benchGain ?? 0;
+      const roleWarning = candidateRoleWarning({
+        position,
+        sleeperMatch,
+        sleeperIndex,
+        impact: bestImpact,
+      });
       const scarcity =
         position === "RB" || position === "WR"
           ? 7
@@ -695,8 +800,12 @@ export function buildWaiverAssistant({
         ),
         now,
       });
-      const isClearUpgrade = Boolean(bestImpact) && rosterGain >= 2.5 && score >= 55;
-      const isStrongUpgrade = rosterGain >= 5 && score >= 68;
+      const isClearUpgrade =
+        Boolean(bestImpact) &&
+        !roleWarning &&
+        rosterGain >= 2.5 &&
+        score >= 55;
+      const isStrongUpgrade = isClearUpgrade && rosterGain >= 5 && score >= 68;
       const actionVerdict: WaiverActionVerdict = !isClearUpgrade
         ? "Hold"
         : availability.availability === "Waivers"
@@ -708,6 +817,9 @@ export function buildWaiverAssistant({
         depth
           ? `${position} depth is ${depth.label.toLowerCase()} (${depth.grade}/100).`
           : `${position} is being evaluated as an upside bench addition.`,
+        requiresSamePositionDrop
+          ? `Your league's ${position} limit is ${limit}; an add must replace another ${position}.`
+          : `The move stays within your league's position limits.`,
         rosterGain > 0
           ? `Full add/drop simulation improves roster value by +${rosterGain.toFixed(1)}.`
           : `This is a watch-list move; it does not clearly improve the current roster yet.`,
@@ -721,13 +833,14 @@ export function buildWaiverAssistant({
           : `No meaningful 24-hour Sleeper add surge is available.`,
       ];
       const warning =
-        injuryPenalty(player) >= 24
+        !bestImpact && rosterSpotsOpen === 0 && !sleeperMatch
+          ? "No safe drop was found. Do not submit this claim without reviewing your roster."
+          : roleWarning ??
+        (injuryPenalty(player) >= 24
           ? `${player.injuryStatus || player.injuryDetail} materially lowers the bid.`
-            : !bestImpact && rosterSpotsOpen === 0
-            ? "No safe drop was found. Do not submit this claim without reviewing your roster."
             : !isClearUpgrade
               ? "No meaningful roster improvement was found. Hold your current player."
-            : null;
+            : null);
       return {
         player,
         position,
