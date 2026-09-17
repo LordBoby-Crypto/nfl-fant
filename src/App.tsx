@@ -150,6 +150,7 @@ function Overview({
   preflightRefreshKey,
   onRefresh,
   onOpenDraft,
+  onOpenView,
   settingsModel,
 }: {
   leagueState: ReturnType<typeof useLeagueSnapshot>;
@@ -160,6 +161,7 @@ function Overview({
   preflightRefreshKey: number;
   onRefresh: () => void;
   onOpenDraft: () => void;
+  onOpenView: (view: "Matchups" | "Waivers" | "Trades" | "Safety") => void;
   settingsModel: LeagueSettingsModel;
 }) {
   const snapshot = leagueState.data;
@@ -172,6 +174,7 @@ function Overview({
         warRoom={warRoom}
         refreshing={refreshing}
         onRefresh={onRefresh}
+        onOpenView={onOpenView}
       />
     );
   }
@@ -587,6 +590,7 @@ function App() {
               warRoom.refresh();
             }}
             onOpenDraft={() => setView("Draft Room")}
+            onOpenView={(nextView) => setView(nextView)}
             settingsModel={settingsModel}
           />
         ) : view === "Draft Room" ? (
