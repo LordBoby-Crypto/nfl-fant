@@ -17437,3 +17437,87 @@ button:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Automatic waiver/free-agent upgrade finder */
+.waiver-scan-summary {
+  display: grid;
+  grid-template-columns: 1.15fr 0.9fr 0.95fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.waiver-scan-summary article {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 96px;
+  padding: 14px;
+  background: #081625;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.waiver-scan-summary article.best-waiver-move {
+  background:
+    linear-gradient(105deg, rgba(186, 255, 16, 0.09), transparent 68%),
+    #081625;
+  border-color: rgba(186, 255, 16, 0.48);
+}
+
+.waiver-scan-summary article.no-waiver-move {
+  border-color: rgba(94, 210, 136, 0.4);
+}
+
+.waiver-scan-summary article > svg {
+  width: 28px;
+  color: var(--accent);
+}
+
+.waiver-scan-summary article > span {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.waiver-scan-summary small {
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.waiver-scan-summary strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waiver-scan-summary em {
+  color: var(--muted);
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.waiver-player-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 61px;
+}
+
+.waiver-evidence {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 800px) {
+  .waiver-scan-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .waiver-scan-summary article {
+    min-height: 84px;
+  }
+}

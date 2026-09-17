@@ -159,8 +159,8 @@ const rosterBoard = rosterPositions.map((position, index) =>
     `fp-${index + 1}`,
     `Roster Player ${index + 1}`,
     position,
-    270 - index * 9,
-    index + 20,
+    index === 7 ? 95 : 270 - index * 9,
+    index === 7 ? 190 : index + 20,
   ),
 );
 
@@ -267,4 +267,185 @@ test("zero remaining FAAB never recommends an unaffordable bid", () => {
     high: 0,
     budgetPercent: 0,
   });
+});
+
+test("a defense stays DST and replaces the weak rostered defense", () => {
+  const weakDefenseBoard = rosterBoard.map((player) =>
+    player.name === "Roster Player 7"
+      ? intelligence("fp-7", "Roster Player 7", "DST", 45, 240)
+      : player,
+  );
+  const result = buildWaiverAssistant({
+    snapshot: snapshot(),
+    picks: [],
+    board: [
+      ...weakDefenseBoard,
+      intelligence("fp-ne", "New England Patriots", "DST", 155, 90),
+    ],
+    sleeperPlayers: {
+      ...sleeperPlayers,
+      ne: sleeper("ne", "New England Patriots", "DEF"),
+    },
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  const defense = result.recommendations.find(
+    (item) => item.player.name === "New England Patriots",
+  );
+  assert.equal(defense?.position, "DST");
+  assert.equal(defense?.drop?.player.position, "DST");
+  assert.equal(defense?.drop?.player.name, "Roster Player 7");
+});
+
+test("a harmful swap is shown only as hold and not as an actionable upgrade", () => {
+  const result = buildWaiverAssistant({
+    snapshot: snapshot(),
+    picks: [],
+    board: [
+      ...rosterBoard,
+      intelligence("bad-wr", "Replacement Level Receiver", "WR", 35, 280),
+    ],
+    sleeperPlayers,
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  const candidate = result.recommendations.find(
+    (item) => item.player.name === "Replacement Level Receiver",
+  );
+  assert.equal(candidate?.actionVerdict, "Hold");
+  assert.equal(candidate?.priority, "Watch");
+  assert.equal(result.upgradeCount, 0);
+  assert.match(result.noUpgradeReason ?? "", /none produced a meaningful improvement/i);
+});
+
+test("automatic protection prevents a cornerstone from becoming the suggested drop", () => {
+  const result = buildWaiverAssistant({
+    snapshot: snapshot(),
+    picks: [],
+    board: [
+      ...rosterBoard,
+      intelligence("free-te", "Useful Tight End", "TE", 180, 80),
+    ],
+    sleeperPlayers,
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  assert.equal(
+    result.recommendations.some((item) => item.drop?.player.ecr === 20),
+    false,
+  );
+  assert.equal(
+    result.protectedPlayers.some((item) => item.player.name === "Roster Player 1"),
+    true,
+  );
+});
+
+test("a recent completed drop is labeled as a waiver claim", () => {
+  const now = Date.UTC(2026, 8, 17, 16, 0, 0);
+  const dropped: SleeperTransaction = {
+    ...transaction(0, "drop"),
+    type: "free_agent",
+    status_updated: now - 12 * 60 * 60 * 1000,
+    created: now - 12 * 60 * 60 * 1000,
+    adds: null,
+    drops: { "free-rb": 2 },
+  };
+  const league = snapshot();
+  league.league.settings.waiver_clear_days = 2;
+  const result = buildWaiverAssistant({
+    snapshot: league,
+    picks: [],
+    board: [
+      ...rosterBoard,
+      intelligence("fp-free-rb", "Breakout Runner", "RB", 310, 18),
+    ],
+    sleeperPlayers: {
+      ...sleeperPlayers,
+      "free-rb": sleeper("free-rb", "Breakout Runner", "RB"),
+    },
+    trendingAdds: [],
+    transactions: [dropped],
+    userRosterId: 1,
+    now,
+  });
+  const recommendation = result.recommendations.find(
+    (item) => item.player.name === "Breakout Runner",
+  );
+  assert.equal(recommendation?.availability, "Waivers");
+  assert.equal(recommendation?.actionVerdict, "Claim now");
+});
+
+test("an occupied reserve slot does not consume an active roster spot", () => {
+  const league = snapshot();
+  league.league.roster_positions.push("IR");
+  league.rosters[0].reserve = ["8"];
+  const result = buildWaiverAssistant({
+    snapshot: league,
+    picks: [],
+    board: [
+      ...rosterBoard,
+      intelligence("free-rb", "Breakout Runner", "RB", 310, 18),
+    ],
+    sleeperPlayers,
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  assert.equal(result.rosterSpotsOpen, 1);
+  assert.equal(result.recommendations[0].moveType, "add-only");
+  assert.equal(result.recommendations[0].drop, null);
+});
+
+test("all available players remain visible when the roster has no safe drop", () => {
+  const protectedBoard = rosterBoard.map((player, index) => ({
+    ...player,
+    ecr: index + 1,
+  }));
+  const result = buildWaiverAssistant({
+    snapshot: snapshot(),
+    picks: [],
+    board: [
+      ...protectedBoard,
+      intelligence("free-rb", "Available Runner", "RB", 240, 65),
+    ],
+    sleeperPlayers,
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  const available = result.recommendations.find(
+    (item) => item.player.name === "Available Runner",
+  );
+  assert.equal(available?.moveType, "no-safe-drop");
+  assert.equal(available?.actionVerdict, "Hold");
+  assert.match(available?.warning ?? "", /no safe drop/i);
+});
+
+test("the available-player board is not capped at sixty players", () => {
+  const candidates = Array.from({ length: 75 }, (_, index) =>
+    intelligence(
+      `available-${index}`,
+      `Available Player ${index}`,
+      index % 2 ? "WR" : "RB",
+      160 - index,
+      80 + index,
+    ),
+  );
+  const result = buildWaiverAssistant({
+    snapshot: snapshot(["1", "2", "3", "4", "5", "6", "7"]),
+    picks: [],
+    board: [...rosterBoard, ...candidates],
+    sleeperPlayers,
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  assert.equal(result.recommendations.length, 76);
+  assert.equal(
+    result.recommendations.some((item) => item.player.name === "Available Player 74"),
+    true,
+  );
 });

@@ -6,17 +6,20 @@ import {
   CheckCircle2,
   CircleAlert,
   Flame,
+  ListChecks,
   LockKeyhole,
   RefreshCw,
   Search,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   TrendingUp,
+  UserPlus,
   UserMinus,
   WalletCards,
 } from "lucide-react";
 import type { useDraftPicks } from "../../hooks/useDraftPicks";
-import { useSleeperPlayers } from "../../hooks/useSleeperPlayers";
+import { useSleeperPlayerCatalog } from "../../hooks/useSleeperPlayerCatalog";
 import type { useWaiverActivity } from "../../hooks/useWaiverActivity";
 import { getUserRoster } from "../../services/sleeper";
 import type { LeagueSnapshot } from "../../types";
@@ -31,7 +34,7 @@ type DraftPickState = ReturnType<typeof useDraftPicks>;
 type WarRoomState = ReturnType<typeof useWarRoom>;
 type WaiverActivityState = ReturnType<typeof useWaiverActivity>;
 type PositionFilter = "ALL" | WaiverPosition;
-type RecommendationFilter = "All recommendations" | "Claims now" | "Watch list";
+type RecommendationFilter = "All available" | "Recommended moves" | "Watch only";
 
 const POSITION_FILTERS: PositionFilter[] = ["ALL", "QB", "RB", "WR", "TE", "K", "DST"];
 
@@ -128,6 +131,55 @@ function BudgetCommand({
   );
 }
 
+function AutomaticScanSummary({
+  result,
+}: {
+  result: ReturnType<typeof buildWaiverAssistant>;
+}) {
+  const best = result.recommendations.find((item) => item.priority !== "Watch") ?? null;
+  return (
+    <section className="waiver-scan-summary">
+      <article className={best ? "best-waiver-move" : "no-waiver-move"}>
+        {best ? <UserPlus /> : <ShieldCheck />}
+        <span>
+          <small>{best ? "Best automatic move" : "Automatic scan complete"}</small>
+          <strong>{best?.actionLabel ?? "Keep your current roster"}</strong>
+          <em>
+            {best
+              ? `+${best.rosterGain.toFixed(1)} roster value · ${best.availability}`
+              : result.noUpgradeReason}
+          </em>
+        </span>
+      </article>
+      <article>
+        <ListChecks />
+        <span>
+          <small>Priority order</small>
+          <strong>{result.upgradeCount} worthwhile move{result.upgradeCount === 1 ? "" : "s"}</strong>
+          <em>
+            {[...result.claimOrder, ...result.freeAgentAdds]
+              .slice(0, 3)
+              .map((item, index) => `${index + 1}. ${item.player.name}`)
+              .join(" · ") || "No claim or add recommended"}
+          </em>
+        </span>
+      </article>
+      <article>
+        <ShieldAlert />
+        <span>
+          <small>Roster safety</small>
+          <strong>{result.protectedPlayers.length} protected · {result.safeDrops.length} reviewable</strong>
+          <em>
+            {result.safeDrops.length
+              ? `Safest cuts: ${result.safeDrops.slice(0, 3).map((item) => item.player.name).join(", ")}`
+              : "No player is currently safe to cut"}
+          </em>
+        </span>
+      </article>
+    </section>
+  );
+}
+
 function RecommendationRow({
   recommendation,
   selected,
@@ -153,16 +205,33 @@ function RecommendationRow({
         </small>
       </span>
       <span className={`waiver-priority priority-${recommendation.priority.replaceAll(" ", "-").toLowerCase()}`}>
-        {recommendation.priority}
+        {recommendation.actionVerdict}
       </span>
       <span className="waiver-bid">
-        <small>Recommended bid</small>
-        <strong>${recommendation.faab.target}</strong>
-        <em>${recommendation.faab.low}–${recommendation.faab.high}</em>
+        <small>{recommendation.availability}</small>
+        <strong>
+          {recommendation.availability === "Free agent"
+            ? "$0"
+            : `$${recommendation.faab.target}`}
+        </strong>
+        <em>
+          {recommendation.availability === "Free agent"
+            ? "Add immediately"
+            : `$${recommendation.faab.low}–$${recommendation.faab.high}`}
+        </em>
       </span>
       <span className="waiver-drop-preview">
-        <small>{recommendation.drop ? "Drop" : "Roster move"}</small>
-        <strong>{recommendation.drop?.player.name ?? "Add only"}</strong>
+        <small>
+          {recommendation.moveType === "swap"
+            ? "Drop"
+            : recommendation.moveType === "add-only"
+              ? "Roster move"
+              : "Decision"}
+        </small>
+        <strong>
+          {recommendation.drop?.player.name ??
+            (recommendation.moveType === "add-only" ? "Add only" : "No safe drop")}
+        </strong>
       </span>
       <span className="waiver-score">
         <strong>{recommendation.score}</strong>
@@ -184,7 +253,7 @@ function RecommendationDetail({
           {recommendation.position}
         </span>
         <span>
-          <small>{recommendation.priority}</small>
+          <small>{recommendation.actionVerdict} · {recommendation.availability}</small>
           <h2>{recommendation.player.name}</h2>
           <p>
             {recommendation.player.team} · {recommendation.player.positionRank || "Unranked"}
@@ -196,14 +265,20 @@ function RecommendationDetail({
 
       <section className="detail-faab">
         <span>
-          <BadgeDollarSign />
-          <small>Bid this amount</small>
-          <strong>${recommendation.faab.target}</strong>
+          {recommendation.availability === "Free agent" ? <UserPlus /> : <BadgeDollarSign />}
+          <small>
+            {recommendation.availability === "Free agent" ? "Acquisition" : "Recommended bid"}
+          </small>
+          <strong>
+            {recommendation.availability === "Free agent"
+              ? "Add now"
+              : `$${recommendation.faab.target}`}
+          </strong>
         </span>
         <span>
-          <small>Playable range</small>
-          <strong>${recommendation.faab.low}–${recommendation.faab.high}</strong>
-          <em>{recommendation.faab.budgetPercent}% of remaining budget</em>
+          <small>Availability evidence</small>
+          <strong>{recommendation.availability}</strong>
+          <em>{recommendation.availabilityNote}</em>
         </span>
       </section>
 
@@ -220,11 +295,24 @@ function RecommendationDetail({
         <article className={recommendation.drop ? "drop-player" : "open-spot"}>
           {recommendation.drop ? <UserMinus /> : <ShieldCheck />}
           <span>
-            <small>{recommendation.drop ? "Drop" : "Use open roster spot"}</small>
-            <strong>{recommendation.drop?.player.name ?? "No drop required"}</strong>
+            <small>
+              {recommendation.drop
+                ? "Drop"
+                : recommendation.moveType === "add-only"
+                  ? "Use open roster spot"
+                  : "Roster protection"}
+            </small>
+            <strong>
+              {recommendation.drop?.player.name ??
+                (recommendation.moveType === "add-only"
+                  ? "No drop required"
+                  : "No safe drop found")}
+            </strong>
             <em>
               {recommendation.drop?.reason ??
-                "Sleeper currently shows room for this addition."}
+                (recommendation.moveType === "add-only"
+                  ? "Sleeper currently shows room for this addition."
+                  : "Keep your roster intact unless circumstances change.")}
             </em>
           </span>
         </article>
@@ -254,6 +342,14 @@ function RecommendationDetail({
           <strong>
             {recommendation.rosterGain > 0 ? "+" : ""}
             {recommendation.rosterGain.toFixed(1)}
+          </strong>
+        </span>
+        <span>
+          <TrendingUp />
+          <small>Starter gain</small>
+          <strong>
+            {recommendation.starterGain > 0 ? "+" : ""}
+            {recommendation.starterGain.toFixed(1)}
           </strong>
         </span>
       </section>
@@ -289,20 +385,11 @@ export function WaiverAssistantPage({
 }) {
   const [position, setPosition] = useState<PositionFilter>("ALL");
   const [recommendationFilter, setRecommendationFilter] =
-    useState<RecommendationFilter>("All recommendations");
+    useState<RecommendationFilter>("Recommended moves");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const userRoster = getUserRoster(snapshot);
-  const playerIds = useMemo(
-    () => [
-      ...snapshot.rosters.flatMap((roster) => roster.players ?? []),
-      ...draftPicks.picks.map((pick) => String(pick.player_id)),
-      ...activity.trendingAdds.map((item) => String(item.player_id)),
-    ],
-    [activity.trendingAdds, draftPicks.picks, snapshot.rosters],
-  );
-  const sleeperPlayers = useSleeperPlayers(
-    playerIds,
+  const sleeperCatalog = useSleeperPlayerCatalog(
     Boolean(userRoster && warRoom.isUnlocked),
   );
   const result = useMemo(
@@ -312,7 +399,7 @@ export function WaiverAssistantPage({
             snapshot,
             picks: draftPicks.picks,
             board: warRoom.board.players,
-            sleeperPlayers: sleeperPlayers.players,
+            sleeperPlayers: sleeperCatalog.players,
             trendingAdds: activity.trendingAdds,
             transactions: activity.transactions,
             userRosterId: userRoster.roster_id,
@@ -322,7 +409,7 @@ export function WaiverAssistantPage({
       activity.transactions,
       activity.trendingAdds,
       draftPicks.picks,
-      sleeperPlayers.players,
+      sleeperCatalog.players,
       snapshot,
       userRoster,
       warRoom.board,
@@ -339,13 +426,13 @@ export function WaiverAssistantPage({
     return (result?.recommendations ?? []).filter((item) => {
       if (position !== "ALL" && item.position !== position) return false;
       if (
-        recommendationFilter === "Claims now" &&
+        recommendationFilter === "Recommended moves" &&
         item.priority === "Watch"
       ) {
         return false;
       }
       if (
-        recommendationFilter === "Watch list" &&
+        recommendationFilter === "Watch only" &&
         item.priority !== "Watch"
       ) {
         return false;
@@ -363,7 +450,7 @@ export function WaiverAssistantPage({
     null;
   const isLoading =
     warRoom.loadingData ||
-    sleeperPlayers.loading ||
+    sleeperCatalog.loading ||
     activity.loading;
 
   return (
@@ -372,7 +459,7 @@ export function WaiverAssistantPage({
         <div>
           <h1>Waiver Assistant</h1>
           <p>
-            Ranked claims, FAAB ranges and the safest corresponding drop.
+            Every available player tested automatically against every safe roster move.
           </p>
         </div>
         <button
@@ -438,12 +525,12 @@ export function WaiverAssistantPage({
         </div>
       ) : null}
 
-      {activity.error || sleeperPlayers.error ? (
+      {activity.error || sleeperCatalog.error ? (
         <div className="data-error" role="alert">
           <CircleAlert />
           <span>
             <strong>Sleeper waiver context is incomplete</strong>
-            <small>{activity.error ?? sleeperPlayers.error}</small>
+            <small>{activity.error ?? sleeperCatalog.error}</small>
           </span>
         </div>
       ) : null}
@@ -451,6 +538,7 @@ export function WaiverAssistantPage({
       {warRoom.isUnlocked && rosterHasPlayers && result && !isLoading ? (
         <>
           <BudgetCommand result={result} />
+          <AutomaticScanSummary result={result} />
           <section className="waiver-toolbar">
             <label className="waiver-search">
               <Search />
@@ -481,9 +569,9 @@ export function WaiverAssistantPage({
                 setRecommendationFilter(event.target.value as RecommendationFilter)
               }
             >
-              <option>All recommendations</option>
-              <option>Claims now</option>
-              <option>Watch list</option>
+              <option>All available</option>
+              <option>Recommended moves</option>
+              <option>Watch only</option>
             </select>
           </section>
 
@@ -491,10 +579,10 @@ export function WaiverAssistantPage({
             <section className="waiver-board">
               <header>
                 <span>
-                  <h2>Available player board</h2>
+                  <h2>Automatic add/drop results</h2>
                   <p>
-                    {filtered.length} shown · {result.availableCount} verified
-                    unrostered players
+                    {filtered.length} shown · {result.availableCount} unrostered
+                    players scanned · every safe swap tested
                   </p>
                 </span>
                 <small>Data obtained from FantasyPros · trends by Sleeper</small>
