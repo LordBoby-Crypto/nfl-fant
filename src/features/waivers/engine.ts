@@ -771,8 +771,7 @@ export function buildWaiverAssistant({
       (left, right) =>
         right.score - left.score ||
         (left.player.ecr ?? 9999) - (right.player.ecr ?? 9999),
-    )
-    .slice(0, 60);
+    );
 
   const actionable = recommendations.filter((item) => item.priority !== "Watch");
   const claimOrder = actionable
