@@ -39,6 +39,14 @@ import {
   type TradeTeamImpact,
 } from "./engine";
 import {
+  automaticCornerstoneIds,
+  DEFAULT_TRADE_PREFERENCES,
+  normalizeTradePreferences,
+  TRADE_POSITIONS,
+  tradePreferencesStorageKey,
+  type TradePreferences,
+} from "./preferences";
+import {
   detectTradeOpportunityAlert,
   tradeOpportunityIds,
   tradeOpportunityStorageKey,
@@ -364,6 +372,16 @@ function TradeResultPanel({
 }) {
   return (
     <section className={`trade-result verdict-${result.verdict}`}>
+      <div
+        className={`trade-action-verdict action-${result.actionVerdict.toLowerCase().replaceAll(" ", "-")}`}
+      >
+        <span>
+          {result.actionVerdict === "Offer" ? <Check /> : <CircleAlert />}
+          <small>War Room action</small>
+          <strong>{result.actionVerdict}</strong>
+        </span>
+        <p>{result.actionReason}</p>
+      </div>
       {suggestion ? (
         <div className="trade-package-summary">
           <span>
@@ -424,7 +442,7 @@ function TradeResultPanel({
           </div>
         </section>
         <section>
-          <header><Gauge /> <h3>Package value is supporting evidence</h3></header>
+          <header><Gauge /> <h3>Market-value check</h3></header>
           <div className="trade-package-values">
             <span>
               <small>You send</small>
@@ -437,11 +455,24 @@ function TradeResultPanel({
             </span>
           </div>
           <p>
-            The verdict is driven by post-trade lineup, depth and needs—not this
-            value comparison alone.
+            Net value after required cuts: {result.marketValueDelta >= 0 ? "+" : ""}
+            {result.marketValueDelta} for your side. Market value is a required
+            gate before lineup fit can support an offer.
           </p>
         </section>
       </div>
+
+      {suggestion ? (
+        <section className="trade-proof-summary">
+          <header><ShieldCheck /> <h3>Recommendation proof</h3></header>
+          <div>
+            <span><small>Starting lineup</small><strong>{signed(result.user.starterDelta, 1)}</strong></span>
+            <span><small>Bench depth</small><strong>{signed(result.user.depthDelta, 1)}</strong></span>
+            <span><small>Required cut</small><strong>{suggestion.userDrops.map((player) => player.name).join(", ") || "None"}</strong></span>
+            <span><small>Why they consider it</small><strong>{suggestion.partnerReason}</strong></span>
+          </div>
+        </section>
+      ) : null}
 
       {result.warnings.length ? (
         <div className="trade-warnings">
@@ -482,7 +513,8 @@ function TradeOpportunityCard({
           <small>#{rank} · {formatLabel} · {suggestion.label}</small>
           <strong>{suggestion.partnerName}</strong>
         </span>
-        <span className="trade-opportunity-fairness">
+        <span className={`trade-opportunity-fairness action-${suggestion.analysis.actionVerdict.toLowerCase().replaceAll(" ", "-")}`}>
+          <em>{suggestion.analysis.actionVerdict}</em>
           <strong>{suggestion.analysis.fairnessScore}%</strong>
           <small>fair</small>
         </span>
@@ -510,6 +542,152 @@ function TradeOpportunityCard({
         <span><Handshake /> {suggestion.partnerReason}</span>
       </footer>
     </button>
+  );
+}
+
+function togglePosition(
+  values: TradePreferences["wantedPositions"],
+  position: TradePreferences["wantedPositions"][number],
+) {
+  return values.includes(position)
+    ? values.filter((value) => value !== position)
+    : [...values, position];
+}
+
+function TradePreferencesPanel({
+  team,
+  preferences,
+  automaticProtectedIds,
+  onChange,
+}: {
+  team: TeamAnalysis;
+  preferences: TradePreferences;
+  automaticProtectedIds: string[];
+  onChange: (preferences: TradePreferences) => void;
+}) {
+  const automaticProtected = new Set(automaticProtectedIds);
+  const displayedPlayers = [...team.players]
+    .filter((player) => !["K", "DST"].includes(player.position))
+    .sort((left, right) => (left.ecr ?? 999) - (right.ecr ?? 999));
+  return (
+    <details className="trade-preferences">
+      <summary>
+        <span><ShieldCheck /></span>
+        <span>
+          <strong>Automatic trade rules</strong>
+          <small>Protect players and tell the scan what kind of help you want.</small>
+        </span>
+        <em>Saved on this device</em>
+      </summary>
+      <div className="trade-preferences-content">
+        <section>
+          <header>
+            <h3>Protected players</h3>
+            <p>Cornerstones are protected automatically. Add anyone else you refuse to trade.</p>
+          </header>
+          <div className="trade-protected-players">
+            {displayedPlayers.map((player) => {
+              const automatic = automaticProtected.has(player.sleeperId);
+              const selected = automatic || preferences.protectedPlayerIds.includes(player.sleeperId);
+              return (
+                <button
+                  key={player.sleeperId}
+                  type="button"
+                  className={selected ? "is-selected" : ""}
+                  disabled={automatic}
+                  aria-pressed={selected}
+                  onClick={() => onChange({
+                    ...preferences,
+                    protectedPlayerIds: selected
+                      ? preferences.protectedPlayerIds.filter((id) => id !== player.sleeperId)
+                      : [...preferences.protectedPlayerIds, player.sleeperId],
+                  })}
+                >
+                  <span className={`position-mark position-${player.position.toLowerCase()}`}>{player.position}</span>
+                  <strong>{player.name}</strong>
+                  <small>{automatic ? "Auto-protected" : selected ? "Protected" : "Available"}</small>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+        <section className="trade-rule-grid">
+          <div>
+            <h3>Positions you want</h3>
+            <p>Leave blank to consider any position.</p>
+            <span className="trade-position-toggles">
+              {TRADE_POSITIONS.map((position) => (
+                <button
+                  key={position}
+                  type="button"
+                  className={preferences.wantedPositions.includes(position) ? "is-selected" : ""}
+                  aria-pressed={preferences.wantedPositions.includes(position)}
+                  onClick={() => onChange({
+                    ...preferences,
+                    wantedPositions: togglePosition(preferences.wantedPositions, position),
+                  })}
+                >{position}</button>
+              ))}
+            </span>
+          </div>
+          <div>
+            <h3>Positions you can trade</h3>
+            <p>Leave blank to consider any unprotected player.</p>
+            <span className="trade-position-toggles">
+              {TRADE_POSITIONS.map((position) => (
+                <button
+                  key={position}
+                  type="button"
+                  className={preferences.tradablePositions.includes(position) ? "is-selected" : ""}
+                  aria-pressed={preferences.tradablePositions.includes(position)}
+                  onClick={() => onChange({
+                    ...preferences,
+                    tradablePositions: togglePosition(preferences.tradablePositions, position),
+                  })}
+                >{position}</button>
+              ))}
+            </span>
+          </div>
+          <label>
+            <h3>Package preference</h3>
+            <select
+              value={preferences.formatPreference}
+              onChange={(event) => onChange({
+                ...preferences,
+                formatPreference: event.target.value as TradePreferences["formatPreference"],
+              })}
+            >
+              <option value="any">Any responsible format</option>
+              <option value="one-for-one">One for one</option>
+              <option value="receive-package">Receive two players</option>
+              <option value="send-package">Send two players</option>
+            </select>
+          </label>
+          <label>
+            <h3>Minimum roster improvement</h3>
+            <select
+              value={preferences.minimumImpact}
+              onChange={(event) => onChange({
+                ...preferences,
+                minimumImpact: Number(event.target.value),
+              })}
+            >
+              <option value={0.5}>Small (+0.5)</option>
+              <option value={1.5}>Meaningful (+1.5)</option>
+              <option value={3}>Major (+3.0)</option>
+              <option value={5}>Elite only (+5.0)</option>
+            </select>
+          </label>
+        </section>
+        <button
+          className="button ghost"
+          type="button"
+          onClick={() => onChange(DEFAULT_TRADE_PREFERENCES)}
+        >
+          Reset optional rules
+        </button>
+      </div>
+    </details>
   );
 }
 
@@ -598,6 +776,10 @@ export function TradeAnalyzerPage({
   const [selectedSuggestionId, setSelectedSuggestionId] = useState("");
   const [opportunityAlert, setOpportunityAlert] =
     useState<TradeOpportunityAlert | null>(null);
+  const [preferences, setPreferences] = useState<TradePreferences>(
+    DEFAULT_TRADE_PREFERENCES,
+  );
+  const [preferencesLoadedKey, setPreferencesLoadedKey] = useState("");
   const playerIds = useMemo(
     () => [
       ...snapshot.rosters.flatMap((roster) => roster.players ?? []),
@@ -628,6 +810,41 @@ export function TradeAnalyzerPage({
   );
   const userTeam =
     teams.find((team) => team.rosterId === userRoster?.roster_id) ?? null;
+  const preferencesKey = tradePreferencesStorageKey(
+    snapshot.league.league_id,
+    userRosterId,
+  );
+  const automaticProtectedIds = useMemo(
+    () => automaticCornerstoneIds(userTeam?.players ?? []),
+    [userTeam?.players],
+  );
+  const effectivePreferences = useMemo(
+    () => ({
+      ...preferences,
+      protectedPlayerIds: [...new Set([
+        ...automaticProtectedIds,
+        ...preferences.protectedPlayerIds,
+      ])],
+    }),
+    [automaticProtectedIds, preferences],
+  );
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(preferencesKey);
+      setPreferences(normalizeTradePreferences(raw ? JSON.parse(raw) : null));
+    } catch {
+      setPreferences(DEFAULT_TRADE_PREFERENCES);
+    }
+    setPreferencesLoadedKey(preferencesKey);
+  }, [preferencesKey]);
+  useEffect(() => {
+    if (preferencesLoadedKey !== preferencesKey) return;
+    try {
+      localStorage.setItem(preferencesKey, JSON.stringify(preferences));
+    } catch {
+      // Private browsing can block persistence; live controls still work.
+    }
+  }, [preferences, preferencesKey, preferencesLoadedKey]);
   const partners = teams.filter(
     (team) => team.rosterId !== userRoster?.roster_id && team.players.length,
   );
@@ -653,6 +870,7 @@ export function TradeAnalyzerPage({
             sleeperPlayers: sleeperPlayers.players,
             userRosterId: userRoster.roster_id,
             teams,
+            preferences: effectivePreferences,
           })
         : [],
     [
@@ -661,6 +879,7 @@ export function TradeAnalyzerPage({
       sleeperPlayers.players,
       snapshot,
       teams,
+      effectivePreferences,
       userRoster,
       warRoom.board,
     ],
@@ -908,6 +1127,13 @@ export function TradeAnalyzerPage({
             partnerCount={partners.length}
             selectedId={selectedSuggestion?.id ?? ""}
             onSelect={selectSuggestion}
+          />
+
+          <TradePreferencesPanel
+            team={userTeam}
+            preferences={preferences}
+            automaticProtectedIds={automaticProtectedIds}
+            onChange={setPreferences}
           />
 
           {analysisMode === "automatic" && selectedSuggestion ? (

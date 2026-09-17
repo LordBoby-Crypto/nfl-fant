@@ -7,6 +7,10 @@ import {
   findTradeSuggestions,
 } from "../src/features/trades/engine.ts";
 import type { TeamPlayer } from "../src/features/my-team/engine.ts";
+import {
+  automaticCornerstoneIds,
+  normalizeTradePreferences,
+} from "../src/features/trades/preferences.ts";
 import type { PlayerIntelligence } from "../src/features/player-intelligence/model.ts";
 import type { LeagueSnapshot, SleeperPlayer } from "../src/types.ts";
 
@@ -393,6 +397,93 @@ test("automatic trade finder scans opponents and returns responsible offers", ()
     best.analysis.warnings.some((warning) => warning.includes("uncovered")),
     false,
   );
+});
+
+test("automatic finder never sends a protected player", () => {
+  const baseline = findTradeSuggestions({
+    snapshot: snapshot(),
+    picks: [],
+    board: board(),
+    sleeperPlayers: sleeperPlayers(),
+    userRosterId: 1,
+  });
+  assert.equal(baseline.length > 0, true);
+  const protectedId = baseline[0].userSends[0].sleeperId;
+  const protectedResults = findTradeSuggestions({
+    snapshot: snapshot(),
+    picks: [],
+    board: board(),
+    sleeperPlayers: sleeperPlayers(),
+    userRosterId: 1,
+    preferences: {
+      protectedPlayerIds: [protectedId],
+      wantedPositions: [],
+      tradablePositions: [],
+      formatPreference: "any",
+      minimumImpact: 0.2,
+    },
+  });
+  assert.equal(
+    protectedResults.some((suggestion) =>
+      suggestion.userSends.some((player) => player.sleeperId === protectedId),
+    ),
+    false,
+  );
+});
+
+test("automatic finder honors wanted, tradable and format rules", () => {
+  const suggestions = findTradeSuggestions({
+    snapshot: snapshot(),
+    picks: [],
+    board: board(),
+    sleeperPlayers: sleeperPlayers(),
+    userRosterId: 1,
+    preferences: {
+      protectedPlayerIds: [],
+      wantedPositions: ["RB"],
+      tradablePositions: ["WR"],
+      formatPreference: "one-for-one",
+      minimumImpact: 0.5,
+    },
+  });
+  assert.equal(suggestions.length > 0, true);
+  assert.equal(
+    suggestions.every(
+      (suggestion) =>
+        suggestion.format === "one-for-one" &&
+        suggestion.userSends.every((player) => player.position === "WR") &&
+        suggestion.partnerSends.some((player) => player.position === "RB") &&
+        suggestion.analysis.user.impactScore >= 0.5,
+    ),
+    true,
+  );
+});
+
+test("trade preferences normalize unsafe stored values", () => {
+  assert.deepEqual(
+    normalizeTradePreferences({
+      protectedPlayerIds: ["u-wr1", "u-wr1", 4],
+      wantedPositions: ["RB", "RB", "DST", 2],
+      tradablePositions: ["WR", "nope"],
+      formatPreference: "invalid",
+      minimumImpact: 99,
+    }),
+    {
+      protectedPlayerIds: ["u-wr1"],
+      wantedPositions: ["RB"],
+      tradablePositions: ["WR"],
+      formatPreference: "any",
+      minimumImpact: 5,
+    },
+  );
+});
+
+test("top-24 ECR players are automatically classified as cornerstones", () => {
+  const players = [
+    marketPlayer({ id: "elite", name: "Elite Player", position: "WR", projection: 280, ecr: 10 }),
+    marketPlayer({ id: "good", name: "Good Player", position: "RB", projection: 230, ecr: 25 }),
+  ];
+  assert.deepEqual(automaticCornerstoneIds(players), ["elite"]);
 });
 
 test("automatic finder keeps any uneven packages responsible after roster cuts", () => {

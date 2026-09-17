@@ -11,6 +11,7 @@ import type {
   SleeperDraftPick,
   SleeperPlayer,
 } from "../../types";
+import type { TradePreferences } from "./preferences";
 
 export type TradeVerdict =
   | "helps-both"
@@ -56,6 +57,9 @@ export interface TradeAnalysis {
   partner: TradeTeamImpact;
   userPackageValue: number;
   partnerPackageValue: number;
+  marketValueDelta: number;
+  actionVerdict: "Offer" | "Consider" | "Do not offer";
+  actionReason: string;
   reasons: string[];
   warnings: string[];
 }
@@ -97,6 +101,7 @@ interface TradeSuggestionInputs
   extends Omit<TradeInputs, "partnerRosterId" | "userSends" | "partnerSends"> {
   limit?: number;
   teams?: TeamAnalysis[];
+  preferences?: TradePreferences;
 }
 
 const VERDICT_LABELS: Record<TradeVerdict, string> = {
@@ -291,6 +296,53 @@ export function assessAutomaticTradeMarket({
     userNetValue,
     partnerNetValue,
     reasons,
+  };
+}
+
+export function tradeActionVerdict({
+  verdict,
+  fairnessScore,
+  user,
+  partner,
+  warnings,
+}: Pick<
+  TradeAnalysis,
+  "verdict" | "fairnessScore" | "user" | "partner" | "warnings"
+>): Pick<TradeAnalysis, "actionVerdict" | "actionReason"> {
+  const hasMarketWarning = warnings.some((warning) =>
+    warning.startsWith("Market-value guard:"),
+  );
+  const hasRosterWarning = warnings.some(
+    (warning) => warning.includes("uncovered") || warning.includes("over the"),
+  );
+  if (
+    hasMarketWarning ||
+    hasRosterWarning ||
+    ["favors-partner", "hurts-both", "needs-work"].includes(verdict) ||
+    user.impactScore < 0
+  ) {
+    return {
+      actionVerdict: "Do not offer",
+      actionReason:
+        "The market value, roster construction, or two-team incentive is not strong enough to justify this offer.",
+    };
+  }
+  if (
+    verdict === "helps-both" &&
+    fairnessScore >= 75 &&
+    user.impactScore >= 1.5 &&
+    partner.impactScore >= 0
+  ) {
+    return {
+      actionVerdict: "Offer",
+      actionReason:
+        "Both teams improve, the market value is responsible, and the other manager has a credible reason to accept.",
+    };
+  }
+  return {
+    actionVerdict: "Consider",
+    actionReason:
+      "The offer is responsible enough to discuss, but the gain or partner incentive is not decisive.",
   };
 }
 
@@ -695,6 +747,13 @@ function analyzeTradeWithLeague({
       );
     }
   }
+  const action = tradeActionVerdict({
+    verdict,
+    fairnessScore,
+    user,
+    partner,
+    warnings,
+  });
   return {
     valid: true,
     verdict,
@@ -711,6 +770,10 @@ function analyzeTradeWithLeague({
     partner,
     userPackageValue: marketCheck.userNetValue,
     partnerPackageValue: marketCheck.partnerNetValue,
+    marketValueDelta: round(
+      marketCheck.partnerNetValue - marketCheck.userNetValue,
+    ),
+    ...action,
     reasons: [
       ...teamReasons(user, "Your team"),
       ...teamReasons(partner, partner.teamName),
@@ -861,6 +924,7 @@ export function findTradeSuggestions({
   userRosterId,
   limit = 8,
   teams,
+  preferences,
 }: TradeSuggestionInputs): TradeSuggestion[] {
   const beforeLeague = teams ??
     analyzeLeagueTeams({
@@ -872,7 +936,14 @@ export function findTradeSuggestions({
   const user = beforeLeague.find((team) => team.rosterId === userRosterId);
   if (!user) return [];
   const userInactiveIds = inactiveRosterIds(snapshot, userRosterId);
-  const userAssets = automaticAssetPool(user, userInactiveIds);
+  const protectedIds = new Set(preferences?.protectedPlayerIds ?? []);
+  const tradablePositions = new Set(preferences?.tradablePositions ?? []);
+  const wantedPositions = new Set(preferences?.wantedPositions ?? []);
+  const userAssets = automaticAssetPool(user, userInactiveIds).filter(
+    (player) =>
+      !protectedIds.has(player.sleeperId) &&
+      (!tradablePositions.size || tradablePositions.has(player.position)),
+  );
   const candidates: TradeSuggestion[] = [];
   const rosterLimit = snapshot.league.roster_positions.filter(
     (slot) => !["IR", "RESERVE", "TAXI"].includes(slot.toUpperCase()),
@@ -888,6 +959,22 @@ export function findTradeSuggestions({
     userPackage: TeamPlayer[];
     partnerPackage: TeamPlayer[];
   }) => {
+    if (
+      wantedPositions.size &&
+      !partnerPackage.some((player) => wantedPositions.has(player.position))
+    ) return;
+    const format: TradeSuggestion["format"] =
+      userPackage.length === 2
+        ? "two-for-one"
+        : partnerPackage.length === 2
+          ? "one-for-two"
+          : "one-for-one";
+    const preferredFormat = preferences?.formatPreference ?? "any";
+    if (
+      (preferredFormat === "one-for-one" && format !== "one-for-one") ||
+      (preferredFormat === "receive-package" && format !== "one-for-two") ||
+      (preferredFormat === "send-package" && format !== "two-for-one")
+    ) return;
     const partnerInactiveIds = inactiveRosterIds(snapshot, partner.rosterId);
     const partnerOccupancy = activeRosterOccupancy(
       snapshot,
@@ -951,16 +1038,10 @@ export function findTradeSuggestions({
     if (
       unsafe ||
       !["helps-both", "balanced"].includes(result.verdict) ||
-      result.user.impactScore < 0.2 ||
+      result.user.impactScore < (preferences?.minimumImpact ?? 0.2) ||
       result.partner.impactScore < -1.5 ||
       result.fairnessScore < 55
     ) return;
-    const format: TradeSuggestion["format"] =
-      userPackage.length === 2
-        ? "two-for-one"
-        : partnerPackage.length === 2
-          ? "one-for-two"
-          : "one-for-one";
     const allIds = [...userPackage, ...partnerPackage]
       .map((player) => player.sleeperId)
       .sort()
