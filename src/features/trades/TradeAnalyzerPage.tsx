@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  ThumbsDown,
+  ThumbsUp,
   TrendingDown,
   TrendingUp,
   UsersRound,
@@ -51,8 +53,16 @@ import {
   tradeOpportunityIds,
   tradeOpportunityStorageKey,
   tradeRosterFingerprint,
+  tradeRosterState,
   type TradeOpportunityAlert,
 } from "./opportunityAlerts";
+import {
+  normalizeTradeFeedback,
+  tradeFeedbackStorageKey,
+  visibleTradeRecommendationIds,
+  type TradeFeedbackMap,
+  type TradeRecommendationFeedback,
+} from "./feedback";
 
 type DraftPickState = ReturnType<typeof useDraftPicks>;
 type WarRoomState = ReturnType<typeof useWarRoom>;
@@ -494,54 +504,72 @@ function TradeOpportunityCard({
   rank,
   selected,
   onSelect,
+  feedback,
+  onFeedback,
 }: {
   suggestion: TradeSuggestion;
   rank: number;
   selected: boolean;
   onSelect: () => void;
+  feedback: TradeRecommendationFeedback | undefined;
+  onFeedback: (feedback: TradeRecommendationFeedback) => void;
 }) {
   const formatLabel = suggestion.format.replaceAll("-", " ");
   return (
-    <button
+    <article
       className={`trade-opportunity-card ${selected ? "is-selected" : ""}`}
-      type="button"
-      aria-pressed={selected}
-      onClick={onSelect}
     >
-      <header>
-        <span>
-          <small>#{rank} · {formatLabel} · {suggestion.label}</small>
-          <strong>{suggestion.partnerName}</strong>
-        </span>
-        <span className={`trade-opportunity-fairness action-${suggestion.analysis.actionVerdict.toLowerCase().replaceAll(" ", "-")}`}>
-          <em>{suggestion.analysis.actionVerdict}</em>
-          <strong>{suggestion.analysis.fairnessScore}%</strong>
-          <small>fair</small>
-        </span>
-      </header>
-      <div className="trade-opportunity-swap">
-        <span>
-          <small>You send</small>
-          <PlayerPackage players={suggestion.userSends} />
-        </span>
-        <ArrowRight />
-        <span>
-          <small>You receive</small>
-          <PlayerPackage players={suggestion.partnerSends} />
-        </span>
+      <button type="button" aria-pressed={selected} onClick={onSelect}>
+        <header>
+          <span>
+            <small>#{rank} · {formatLabel} · {suggestion.label}</small>
+            <strong>{suggestion.partnerName}</strong>
+          </span>
+          <span className={`trade-opportunity-fairness action-${suggestion.analysis.actionVerdict.toLowerCase().replaceAll(" ", "-")}`}>
+            <em>{suggestion.analysis.actionVerdict}</em>
+            <strong>{suggestion.analysis.fairnessScore}%</strong>
+            <small>fair</small>
+          </span>
+        </header>
+        <div className="trade-opportunity-swap">
+          <span>
+            <small>You send</small>
+            <PlayerPackage players={suggestion.userSends} />
+          </span>
+          <ArrowRight />
+          <span>
+            <small>You receive</small>
+            <PlayerPackage players={suggestion.partnerSends} />
+          </span>
+        </div>
+        {suggestion.userDrops.length || suggestion.partnerDrops.length ? (
+          <p className="trade-opportunity-drop">
+            {suggestion.userDrops.length
+              ? `Your cut: ${suggestion.userDrops.map((player) => player.name).join(", ")}`
+              : `Their cut: ${suggestion.partnerDrops.map((player) => player.name).join(", ")}`}
+          </p>
+        ) : null}
+        <footer>
+          <span><TrendingUp /> Your roster {signed(suggestion.analysis.user.impactScore, 1)}</span>
+          <span><Handshake /> {suggestion.partnerReason}</span>
+        </footer>
+      </button>
+      <div className="trade-recommendation-feedback">
+        <span>Useful recommendation?</span>
+        <button
+          type="button"
+          className={feedback === "helpful" ? "is-selected" : ""}
+          aria-label={`Mark trade with ${suggestion.partnerName} helpful`}
+          aria-pressed={feedback === "helpful"}
+          onClick={() => onFeedback("helpful")}
+        ><ThumbsUp /> Yes</button>
+        <button
+          type="button"
+          aria-label={`Hide trade with ${suggestion.partnerName}`}
+          onClick={() => onFeedback("not-helpful")}
+        ><ThumbsDown /> Hide</button>
       </div>
-      {suggestion.userDrops.length || suggestion.partnerDrops.length ? (
-        <p className="trade-opportunity-drop">
-          {suggestion.userDrops.length
-            ? `Your cut: ${suggestion.userDrops.map((player) => player.name).join(", ")}`
-            : `Their cut: ${suggestion.partnerDrops.map((player) => player.name).join(", ")}`}
-        </p>
-      ) : null}
-      <footer>
-        <span><TrendingUp /> Your roster {signed(suggestion.analysis.user.impactScore, 1)}</span>
-        <span><Handshake /> {suggestion.partnerReason}</span>
-      </footer>
-    </button>
+    </article>
   );
 }
 
@@ -696,11 +724,19 @@ function AutomaticTradeFinder({
   partnerCount,
   selectedId,
   onSelect,
+  feedback,
+  hiddenCount,
+  onFeedback,
+  onRestoreHidden,
 }: {
   suggestions: TradeSuggestion[];
   partnerCount: number;
   selectedId: string;
   onSelect: (suggestion: TradeSuggestion) => void;
+  feedback: TradeFeedbackMap;
+  hiddenCount: number;
+  onFeedback: (suggestionId: string, feedback: TradeRecommendationFeedback) => void;
+  onRestoreHidden: () => void;
 }) {
   return (
     <section className="trade-finder">
@@ -729,6 +765,8 @@ function AutomaticTradeFinder({
               rank={index + 1}
               selected={selectedId === suggestion.id}
               onSelect={() => onSelect(suggestion)}
+              feedback={feedback[suggestion.id]}
+              onFeedback={(value) => onFeedback(suggestion.id, value)}
             />
           ))}
         </div>
@@ -745,6 +783,11 @@ function AutomaticTradeFinder({
           </span>
         </div>
       )}
+      {hiddenCount ? (
+        <button className="trade-restore-feedback" type="button" onClick={onRestoreHidden}>
+          Restore {hiddenCount} hidden recommendation{hiddenCount === 1 ? "" : "s"}
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -780,6 +823,8 @@ export function TradeAnalyzerPage({
     DEFAULT_TRADE_PREFERENCES,
   );
   const [preferencesLoadedKey, setPreferencesLoadedKey] = useState("");
+  const [feedback, setFeedback] = useState<TradeFeedbackMap>({});
+  const [feedbackLoadedKey, setFeedbackLoadedKey] = useState("");
   const playerIds = useMemo(
     () => [
       ...snapshot.rosters.flatMap((roster) => roster.players ?? []),
@@ -814,6 +859,10 @@ export function TradeAnalyzerPage({
     snapshot.league.league_id,
     userRosterId,
   );
+  const feedbackKey = tradeFeedbackStorageKey(
+    snapshot.league.league_id,
+    userRosterId,
+  );
   const automaticProtectedIds = useMemo(
     () => automaticCornerstoneIds(userTeam?.players ?? []),
     [userTeam?.players],
@@ -845,6 +894,23 @@ export function TradeAnalyzerPage({
       // Private browsing can block persistence; live controls still work.
     }
   }, [preferences, preferencesKey, preferencesLoadedKey]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(feedbackKey);
+      setFeedback(normalizeTradeFeedback(raw ? JSON.parse(raw) : null));
+    } catch {
+      setFeedback({});
+    }
+    setFeedbackLoadedKey(feedbackKey);
+  }, [feedbackKey]);
+  useEffect(() => {
+    if (feedbackLoadedKey !== feedbackKey) return;
+    try {
+      localStorage.setItem(feedbackKey, JSON.stringify(feedback));
+    } catch {
+      // Feedback remains active for this tab if persistence is blocked.
+    }
+  }, [feedback, feedbackKey, feedbackLoadedKey]);
   const partners = teams.filter(
     (team) => team.rosterId !== userRoster?.roster_id && team.players.length,
   );
@@ -884,13 +950,30 @@ export function TradeAnalyzerPage({
       warRoom.board,
     ],
   );
+  const visibleSuggestionIds = useMemo(
+    () => visibleTradeRecommendationIds(
+      suggestions.map((suggestion) => suggestion.id),
+      feedback,
+    ),
+    [feedback, suggestions],
+  );
+  const visibleSuggestionIdSet = useMemo(
+    () => new Set(visibleSuggestionIds),
+    [visibleSuggestionIds],
+  );
+  const visibleSuggestions = useMemo(
+    () => suggestions.filter((suggestion) => visibleSuggestionIdSet.has(suggestion.id)),
+    [suggestions, visibleSuggestionIdSet],
+  );
+  const hiddenSuggestionCount = suggestions.length - visibleSuggestions.length;
   const rosterFingerprint = useMemo(
     () => tradeRosterFingerprint(snapshot),
     [snapshot],
   );
+  const rosterState = useMemo(() => tradeRosterState(snapshot), [snapshot]);
   const opportunityIds = useMemo(
-    () => tradeOpportunityIds(suggestions),
-    [suggestions],
+    () => tradeOpportunityIds(visibleSuggestions),
+    [visibleSuggestions],
   );
   useEffect(() => {
     if (!warRoom.isUnlocked || isLoading || !userRosterId) return;
@@ -904,6 +987,7 @@ export function TradeAnalyzerPage({
         ? (JSON.parse(raw) as {
             rosterFingerprint?: unknown;
             opportunityIds?: unknown;
+            rosterState?: unknown;
             savedAt?: unknown;
           })
         : null;
@@ -916,6 +1000,18 @@ export function TradeAnalyzerPage({
               opportunityIds: previous.opportunityIds.filter(
                 (value): value is string => typeof value === "string",
               ),
+              rosterState:
+                previous.rosterState &&
+                typeof previous.rosterState === "object" &&
+                !Array.isArray(previous.rosterState)
+                  ? Object.fromEntries(
+                      Object.entries(previous.rosterState).flatMap(([id, players]) =>
+                        Array.isArray(players)
+                          ? [[id, players.filter((player): player is string => typeof player === "string")]]
+                          : [],
+                      ),
+                    )
+                  : undefined,
               savedAt:
                 typeof previous.savedAt === "number" ? previous.savedAt : 0,
             }
@@ -924,6 +1020,7 @@ export function TradeAnalyzerPage({
         safePrevious,
         rosterFingerprint,
         opportunityIds,
+        rosterState,
       );
       setOpportunityAlert(alert);
       if (alert?.opportunityIds[0]) {
@@ -935,12 +1032,18 @@ export function TradeAnalyzerPage({
         JSON.stringify({
           rosterFingerprint,
           opportunityIds,
+          rosterState,
           savedAt: Date.now(),
         }),
       );
       if (alert && "Notification" in window && Notification.permission === "granted") {
+        const bestNew = visibleSuggestions.find((suggestion) =>
+          alert.opportunityIds.includes(suggestion.id),
+        );
         new Notification("New War Room trade opportunity", {
-          body: `${alert.count} new viable package${alert.count === 1 ? "" : "s"} appeared after a Sleeper roster change.`,
+          body: bestNew
+            ? `${bestNew.partnerName}: send ${bestNew.userSends.map((player) => player.name).join(" + ")} for ${bestNew.partnerSends.map((player) => player.name).join(" + ")}.`
+            : `${alert.count} new viable package${alert.count === 1 ? "" : "s"} appeared after a Sleeper roster change.`,
         });
       }
     } catch {
@@ -950,14 +1053,24 @@ export function TradeAnalyzerPage({
     isLoading,
     opportunityIds,
     rosterFingerprint,
+    rosterState,
     snapshot.league.league_id,
     userRosterId,
+    visibleSuggestions,
     warRoom.isUnlocked,
   ]);
   const selectedSuggestion =
-    suggestions.find((item) => item.id === selectedSuggestionId) ??
-    suggestions[0] ??
+    visibleSuggestions.find((item) => item.id === selectedSuggestionId) ??
+    visibleSuggestions[0] ??
     null;
+  const alertedSuggestion = opportunityAlert
+    ? visibleSuggestions.find((item) => opportunityAlert.opportunityIds.includes(item.id)) ?? null
+    : null;
+  const changedTeamNames = opportunityAlert
+    ? teams
+        .filter((team) => opportunityAlert.changedRosterIds.includes(team.rosterId))
+        .map((team) => team.teamName)
+    : [];
   const result = useMemo(() => {
     if (
       !submitted ||
@@ -1108,9 +1221,17 @@ export function TradeAnalyzerPage({
             <section className="trade-opportunity-alert" role="status">
               <BellRing />
               <span>
-                <strong>New trade opportunity after a Sleeper roster change</strong>
+                <strong>
+                  {alertedSuggestion
+                    ? `New opportunity with ${alertedSuggestion.partnerName}`
+                    : "New trade opportunity after a Sleeper roster change"}
+                </strong>
                 <small>
-                  {opportunityAlert.count} newly viable package{opportunityAlert.count === 1 ? "" : "s"} found. The best new option is selected below.
+                  {opportunityAlert.changeSummary}
+                  {changedTeamNames.length ? ` Changed: ${changedTeamNames.join(", ")}.` : ""}
+                  {alertedSuggestion
+                    ? ` Send ${alertedSuggestion.userSends.map((player) => player.name).join(" + ")} for ${alertedSuggestion.partnerSends.map((player) => player.name).join(" + ")}. ${alertedSuggestion.partnerReason}`
+                    : ` ${opportunityAlert.count} newly viable package${opportunityAlert.count === 1 ? "" : "s"} found.`}
                 </small>
               </span>
               <button
@@ -1123,10 +1244,23 @@ export function TradeAnalyzerPage({
             </section>
           ) : null}
           <AutomaticTradeFinder
-            suggestions={suggestions}
+            suggestions={visibleSuggestions}
             partnerCount={partners.length}
             selectedId={selectedSuggestion?.id ?? ""}
             onSelect={selectSuggestion}
+            feedback={feedback}
+            hiddenCount={hiddenSuggestionCount}
+            onFeedback={(suggestionId, value) => {
+              setFeedback((current) => ({ ...current, [suggestionId]: value }));
+              if (value === "not-helpful" && selectedSuggestionId === suggestionId) {
+                setSelectedSuggestionId("");
+              }
+            }}
+            onRestoreHidden={() => setFeedback((current) =>
+              Object.fromEntries(
+                Object.entries(current).filter(([, value]) => value !== "not-helpful"),
+              ),
+            )}
           />
 
           <TradePreferencesPanel

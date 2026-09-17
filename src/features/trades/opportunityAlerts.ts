@@ -4,12 +4,43 @@ import type { TradeSuggestion } from "./engine";
 export interface StoredTradeOpportunities {
   rosterFingerprint: string;
   opportunityIds: string[];
+  rosterState?: Record<string, string[]>;
   savedAt: number;
 }
 
 export interface TradeOpportunityAlert {
   count: number;
   opportunityIds: string[];
+  changedRosterIds: number[];
+  changeSummary: string;
+}
+
+export function tradeRosterState(snapshot: LeagueSnapshot) {
+  return Object.fromEntries(
+    snapshot.rosters.map((roster) => [
+      String(roster.roster_id),
+      [...new Set([
+        ...(roster.players ?? []).map((playerId) => `roster:${String(playerId)}`),
+        ...(roster.reserve ?? []).map((playerId) => `reserve:${String(playerId)}`),
+        ...(roster.taxi ?? []).map((playerId) => `taxi:${String(playerId)}`),
+      ])].sort(),
+    ]),
+  );
+}
+
+export function changedTradeRosters(
+  previous: Record<string, string[]> | undefined,
+  current: Record<string, string[]>,
+) {
+  if (!previous) return [];
+  return [...new Set([...Object.keys(previous), ...Object.keys(current)])]
+    .filter((rosterId) =>
+      (previous[rosterId] ?? []).join(",") !==
+      (current[rosterId] ?? []).join(","),
+    )
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right);
 }
 
 export function tradeRosterFingerprint(snapshot: LeagueSnapshot) {
@@ -37,11 +68,19 @@ export function detectTradeOpportunityAlert(
   previous: StoredTradeOpportunities | null,
   rosterFingerprint: string,
   opportunityIds: string[],
+  rosterState: Record<string, string[]> = {},
 ): TradeOpportunityAlert | null {
   if (!previous || previous.rosterFingerprint === rosterFingerprint) return null;
   const known = new Set(previous.opportunityIds);
   const newIds = opportunityIds.filter((id) => !known.has(id));
-  return newIds.length
-    ? { count: newIds.length, opportunityIds: newIds }
-    : null;
+  if (!newIds.length) return null;
+  const changedRosterIds = changedTradeRosters(previous.rosterState, rosterState);
+  return {
+    count: newIds.length,
+    opportunityIds: newIds,
+    changedRosterIds,
+    changeSummary: changedRosterIds.length
+      ? `${changedRosterIds.length} roster${changedRosterIds.length === 1 ? "" : "s"} changed since the last scan.`
+      : "Sleeper reported a roster change since the last scan.",
+  };
 }

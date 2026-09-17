@@ -225,6 +225,198 @@
   line-height: 1.6;
 }
 
+.post-command-center,
+.post-data-health {
+  margin-top: 24px;
+  padding: 24px;
+  background: rgba(9, 23, 38, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.post-command-center > header,
+.post-data-health > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.post-command-center > header > svg,
+.post-data-health > header > svg {
+  width: 26px;
+  color: var(--accent);
+}
+
+.post-command-center h2,
+.post-data-health h2 {
+  margin: 0 0 3px;
+  font-size: 19px;
+}
+
+.post-command-center header p,
+.post-data-health header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.post-command-center > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.post-command-center article {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 86px;
+  padding: 14px;
+  background: #071421;
+  border: 1px solid rgba(65, 82, 101, 0.72);
+  border-radius: 7px;
+}
+
+.post-command-center article.is-urgent {
+  border-color: rgba(244, 198, 107, 0.48);
+  box-shadow: inset 3px 0 #f4c66b;
+}
+
+.post-command-center article > b {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  color: #06111f;
+  background: var(--accent);
+  border-radius: 50%;
+  place-items: center;
+}
+
+.post-command-center article > span {
+  display: grid;
+  gap: 4px;
+}
+
+.post-command-center article small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.post-command-center article button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--accent);
+  background: rgba(186, 255, 16, 0.05);
+  border: 1px solid rgba(186, 255, 16, 0.35);
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.post-command-center article button svg {
+  width: 13px;
+}
+
+.post-data-health > header > strong {
+  margin-left: auto;
+  padding: 5px 8px;
+  color: var(--accent);
+  background: rgba(186, 255, 16, 0.08);
+  border-radius: 4px;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.post-data-health.is-warning > header > strong,
+.post-data-health.is-unavailable > header > strong {
+  color: #f4c66b;
+  background: rgba(244, 198, 107, 0.09);
+}
+
+.post-data-health-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.post-data-health-grid article {
+  min-width: 0;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+}
+
+.post-data-health-grid article:last-child {
+  border-right: 0;
+}
+
+.post-data-health-grid article > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.post-data-health-grid small,
+.post-data-health-grid time,
+.post-data-health-grid p,
+.post-data-health footer small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.post-data-health-grid article > span strong {
+  color: var(--accent);
+  font-size: 7px;
+  text-transform: uppercase;
+}
+
+.post-data-health-grid article.is-warning > span strong,
+.post-data-health-grid article.is-unavailable > span strong {
+  color: #f4c66b;
+}
+
+.post-data-health-grid time {
+  display: block;
+  margin: 8px 0 5px;
+  color: #d7e0ea;
+}
+
+.post-data-health-grid p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.post-data-health footer {
+  display: grid;
+  grid-template-columns: repeat(3, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.post-data-health footer > span {
+  display: grid;
+  gap: 2px;
+}
+
+.post-data-health footer > span strong {
+  font-size: 16px;
+}
+
+.post-data-health footer > p {
+  margin: 0;
+  color: #b8c5d4;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
 .post-report-section {
   margin-top: 24px;
   padding: 24px;
@@ -770,6 +962,34 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .post-command-center,
+  .post-data-health {
+    padding: 18px 14px;
+  }
+
+  .post-command-center > div,
+  .post-data-health-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .post-data-health-grid article,
+  .post-data-health-grid article:last-child {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .post-data-health-grid article:last-child {
+    border-bottom: 0;
+  }
+
+  .post-data-health footer {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .post-data-health footer > p {
+    grid-column: 1 / -1;
+  }
+
   .week-one-lineup article {
     grid-template-columns: 46px minmax(0, 1fr) auto;
   }
@@ -809,6 +1029,15 @@
 
   .post-grade-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .post-command-center article {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .post-command-center article button {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .post-player-list > div {
@@ -11401,13 +11630,19 @@ button:focus-visible {
 
 .trade-opportunity-card {
   min-width: 0;
-  padding: 0;
   color: var(--text);
+  background: transparent;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.trade-opportunity-card > button:first-child {
+  width: 100%;
+  padding: 0;
+  color: inherit;
   text-align: left;
   background: transparent;
   border: 0;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
   font: inherit;
   cursor: pointer;
 }
@@ -11429,7 +11664,7 @@ button:focus-visible {
   box-shadow: inset 4px 0 var(--accent);
 }
 
-.trade-opportunity-card > header {
+.trade-opportunity-card > button:first-child > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -11439,20 +11674,20 @@ button:focus-visible {
   border-bottom: 1px solid rgba(65, 82, 101, 0.55);
 }
 
-.trade-opportunity-card > header > span:first-child {
+.trade-opportunity-card > button:first-child > header > span:first-child {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
-.trade-opportunity-card > header small {
+.trade-opportunity-card > button:first-child > header small {
   color: var(--accent);
   font-size: 7px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.trade-opportunity-card > header strong {
+.trade-opportunity-card > button:first-child > header strong {
   overflow: hidden;
   font-size: 11px;
   text-overflow: ellipsis;
@@ -11558,7 +11793,7 @@ button:focus-visible {
   color: var(--accent);
 }
 
-.trade-opportunity-card > footer {
+.trade-opportunity-card > button:first-child > footer {
   display: grid;
   grid-template-columns: 0.7fr 1.3fr;
   gap: 8px;
@@ -11576,7 +11811,7 @@ button:focus-visible {
   font-size: 7px;
 }
 
-.trade-opportunity-card > footer span {
+.trade-opportunity-card > button:first-child > footer span {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -11584,10 +11819,59 @@ button:focus-visible {
   line-height: 1.4;
 }
 
-.trade-opportunity-card > footer svg {
+.trade-opportunity-card > button:first-child > footer svg {
   flex: 0 0 auto;
   width: 13px;
   color: var(--accent);
+}
+
+.trade-recommendation-feedback {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  background: rgba(3, 12, 22, 0.7);
+  border-top: 1px solid rgba(65, 82, 101, 0.45);
+}
+
+.trade-recommendation-feedback > span {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trade-recommendation-feedback button,
+.trade-restore-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 4px 8px;
+  color: #b8c5d4;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 7px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.trade-recommendation-feedback button.is-selected {
+  color: var(--accent);
+  border-color: rgba(186, 255, 16, 0.48);
+  background: rgba(186, 255, 16, 0.07);
+}
+
+.trade-recommendation-feedback svg {
+  width: 11px;
+}
+
+.trade-restore-feedback {
+  margin: 10px 14px 14px auto;
 }
 
 .trade-finder-empty {
@@ -12871,7 +13155,7 @@ button:focus-visible {
     border-bottom: 0;
   }
 
-  .trade-opportunity-card > footer {
+  .trade-opportunity-card > button:first-child > footer {
     grid-template-columns: 1fr;
   }
 
