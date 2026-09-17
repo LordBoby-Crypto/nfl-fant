@@ -20,8 +20,9 @@ export function tradeRosterState(snapshot: LeagueSnapshot) {
     snapshot.rosters.map((roster) => [
       String(roster.roster_id),
       [...new Set([
-        ...(roster.players ?? []).map(String),
-        ...(roster.reserve ?? []).map(String),
+        ...(roster.players ?? []).map((playerId) => `roster:${String(playerId)}`),
+        ...(roster.reserve ?? []).map((playerId) => `reserve:${String(playerId)}`),
+        ...(roster.taxi ?? []).map((playerId) => `taxi:${String(playerId)}`),
       ])].sort(),
     ]),
   );
