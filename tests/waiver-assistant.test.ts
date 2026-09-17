@@ -423,3 +423,29 @@ test("all available players remain visible when the roster has no safe drop", ()
   assert.equal(available?.actionVerdict, "Hold");
   assert.match(available?.warning ?? "", /no safe drop/i);
 });
+
+test("the available-player board is not capped at sixty players", () => {
+  const candidates = Array.from({ length: 75 }, (_, index) =>
+    intelligence(
+      `available-${index}`,
+      `Available Player ${index}`,
+      index % 2 ? "WR" : "RB",
+      160 - index,
+      80 + index,
+    ),
+  );
+  const result = buildWaiverAssistant({
+    snapshot: snapshot(["1", "2", "3", "4", "5", "6", "7"]),
+    picks: [],
+    board: [...rosterBoard, ...candidates],
+    sleeperPlayers,
+    trendingAdds: [],
+    transactions: [],
+    userRosterId: 1,
+  });
+  assert.equal(result.recommendations.length, 76);
+  assert.equal(
+    result.recommendations.some((item) => item.player.name === "Available Player 74"),
+    true,
+  );
+});
