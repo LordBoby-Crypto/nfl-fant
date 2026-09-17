@@ -9,6 +9,7 @@ import type {
 import { normalizePlayerName, pickPlayerName } from "../live-draft/engine.ts";
 import {
   analyzeLeagueTeams,
+  optimizeLineup,
   type PositionDepth,
   type TeamAnalysis,
   type TeamPlayer,
@@ -17,6 +18,8 @@ import {
 export type WaiverPosition = Exclude<PlayerPosition, "—">;
 export type WaiverPriority = "Priority add" | "Upgrade" | "Watch";
 export type WaiverConfidence = "High" | "Medium" | "Limited";
+export type WaiverAvailability = "Waivers" | "Free agent" | "Check Sleeper";
+export type WaiverActionVerdict = "Claim now" | "Add now" | "Consider" | "Hold";
 
 export interface FaabRecommendation {
   low: number;
@@ -29,6 +32,11 @@ export interface DropSuggestion {
   player: TeamPlayer;
   reason: string;
   protected: boolean;
+}
+
+export interface WaiverRosterGuard {
+  player: TeamPlayer;
+  reason: string;
 }
 
 export interface WaiverRecommendation {
@@ -44,6 +52,14 @@ export interface WaiverRecommendation {
   confidence: WaiverConfidence;
   reasons: string[];
   warning: string | null;
+  availability: WaiverAvailability;
+  availabilityNote: string;
+  actionVerdict: WaiverActionVerdict;
+  actionLabel: string;
+  starterGain: number;
+  projectionGain: number | null;
+  benchGain: number;
+  moveType: "add-only" | "swap" | "no-safe-drop";
 }
 
 export interface WaiverBidClimate {
@@ -62,6 +78,12 @@ export interface WaiverAssistantResult {
   waiverPosition: number;
   bidClimate: WaiverBidClimate;
   team: TeamAnalysis | null;
+  upgradeCount: number;
+  claimOrder: WaiverRecommendation[];
+  freeAgentAdds: WaiverRecommendation[];
+  safeDrops: WaiverRosterGuard[];
+  protectedPlayers: WaiverRosterGuard[];
+  noUpgradeReason: string | null;
 }
 
 const POSITIONS = new Set<WaiverPosition>(["QB", "RB", "WR", "TE", "K", "DST"]);
@@ -183,44 +205,270 @@ function dropSafety(player: TeamPlayer, depth: PositionDepth | null) {
   return base + injury + surplus - coverageRisk;
 }
 
-function chooseDrop(
-  team: TeamAnalysis | null,
-  position: WaiverPosition,
-  rosterSpotsOpen: number,
+function round(value: number, digits = 1) {
+  const multiplier = 10 ** digits;
+  return Math.round(value * multiplier) / multiplier;
+}
+
+function automaticProtectionReason(player: TeamPlayer) {
+  if (
+    !["K", "DST"].includes(player.position) &&
+    player.ecr !== null &&
+    player.ecr <= 72
+  ) {
+    return `Top-${player.ecr} rest-of-season player; automatically protected.`;
+  }
+  return null;
+}
+
+function rosterScore(players: TeamPlayer[], rosterPositions: string[]) {
+  const optimized = optimizeLineup(players, rosterPositions);
+  const starters = optimized.lineup.flatMap((slot) =>
+    slot.player ? [slot.player] : [],
+  );
+  const emptySlots = optimized.lineup.filter((slot) => !slot.player).length;
+  const starterValue = starters.reduce(
+    (total, player) => total + playerValue(player),
+    0,
+  );
+  const benchValue = optimized.bench
+    .map(playerValue)
+    .sort((left, right) => right - left)
+    .slice(0, 6)
+    .reduce(
+      (total, value, index) => total + value * Math.max(0.12, 0.34 - index * 0.045),
+      0,
+    );
+  const projections = starters.flatMap((player) =>
+    player.projectedPoints === null ? [] : [player.projectedPoints],
+  );
+  return {
+    optimized,
+    starterValue,
+    benchValue,
+    total: starterValue + benchValue - emptySlots * 80,
+    projection:
+      projections.length === starters.length && projections.length
+        ? projections.reduce((total, value) => total + value, 0)
+        : null,
+    emptySlots,
+  };
+}
+
+function candidateTeamPlayer(
+  player: PlayerIntelligence,
+  sleeperId: string,
+): TeamPlayer {
+  return {
+    id: player.id,
+    sleeperId,
+    name: player.name,
+    position: player.position as WaiverPosition,
+    team: player.team,
+    injuryStatus: player.injuryStatus || player.injuryDetail,
+    byeWeek: player.byeWeek,
+    projectedPoints: player.projectedPoints,
+    ecr: player.ecr,
+    positionRank: player.positionRank,
+    currentStarter: false,
+    reserve: false,
+    intelligence: player,
+  };
+}
+
+function positionCoveredAfterMove(
+  team: TeamAnalysis,
+  candidate: TeamPlayer,
+  drop: TeamPlayer | null,
 ) {
-  if (!team || rosterSpotsOpen > 0) return null;
-  const candidates = team.bench
-    .map((player) => ({
-      player,
-      depth: depthFor(team, player.position),
-    }))
-    .filter(({ player, depth }) => {
-      if (!depth) return true;
-      if (player.position === "K" || player.position === "DST") return true;
-      return depth.total > Math.max(1, depth.required);
+  if (!drop || drop.position === candidate.position) return true;
+  const depth = depthFor(team, drop.position);
+  return !depth || depth.total - 1 >= Math.max(1, depth.required);
+}
+
+interface PairImpact {
+  drop: DropSuggestion | null;
+  rosterGain: number;
+  starterGain: number;
+  projectionGain: number | null;
+  benchGain: number;
+  createsLineupHole: boolean;
+}
+
+function testAddDropPair({
+  team,
+  candidate,
+  drop,
+  rosterPositions,
+  before,
+}: {
+  team: TeamAnalysis;
+  candidate: TeamPlayer;
+  drop: TeamPlayer | null;
+  rosterPositions: string[];
+  before: ReturnType<typeof rosterScore>;
+}): PairImpact | null {
+  if (drop && automaticProtectionReason(drop)) return null;
+  if (drop?.currentStarter && drop.position !== candidate.position) return null;
+  if (!positionCoveredAfterMove(team, candidate, drop)) return null;
+
+  const afterPlayers = [
+    ...team.players.filter((player) => player.sleeperId !== drop?.sleeperId),
+    candidate,
+  ];
+  const after = rosterScore(afterPlayers, rosterPositions);
+  const createsLineupHole = after.emptySlots > before.emptySlots;
+  if (createsLineupHole) return null;
+
+  const samePosition = drop?.position === candidate.position;
+  const injured = Boolean(drop?.injuryStatus);
+  return {
+    drop: drop
+      ? {
+          player: drop,
+          reason: injured
+            ? `${drop.injuryStatus} lowers the value of this roster spot.`
+            : samePosition
+              ? `${candidate.name} grades as the stronger ${candidate.position} after the lineup is rebuilt.`
+              : "This is the lowest-impact expendable roster spot after positional coverage is checked.",
+          protected: false,
+        }
+      : null,
+    rosterGain: round(after.total - before.total),
+    starterGain: round(after.starterValue - before.starterValue),
+    projectionGain:
+      before.projection === null || after.projection === null
+        ? null
+        : round(after.projection - before.projection),
+    benchGain: round(after.benchValue - before.benchValue),
+    createsLineupHole,
+  };
+}
+
+function sleeperName(player: SleeperPlayer) {
+  return (
+    player.full_name?.trim() ||
+    [player.first_name, player.last_name].filter(Boolean).join(" ").trim()
+  );
+}
+
+function sleeperPosition(player: SleeperPlayer) {
+  const value = player.position?.toUpperCase();
+  return value === "DEF" ? "DST" : value;
+}
+
+interface SleeperPlayerIndex {
+  byIdentity: Map<string, [string, SleeperPlayer]>;
+  defensesByTeam: Map<string, [string, SleeperPlayer]>;
+}
+
+function buildSleeperPlayerIndex(
+  sleeperPlayers: Record<string, SleeperPlayer>,
+): SleeperPlayerIndex {
+  const byIdentity = new Map<string, [string, SleeperPlayer]>();
+  const defensesByTeam = new Map<string, [string, SleeperPlayer]>();
+  for (const [id, player] of Object.entries(sleeperPlayers)) {
+    const position = sleeperPosition(player);
+    const name = normalizePlayerName(sleeperName(player));
+    if (name && position) byIdentity.set(`${name}:${position}`, [id, player]);
+    if (position === "DST" && player.team) {
+      defensesByTeam.set(normalizePlayerName(player.team), [id, player]);
+    }
+  }
+  return { byIdentity, defensesByTeam };
+}
+
+function sleeperMatches(
+  boardPlayer: PlayerIntelligence,
+  index: SleeperPlayerIndex,
+) {
+  const targetName = normalizePlayerName(boardPlayer.name);
+  const targetPosition = normalizedPosition(boardPlayer.position);
+  if (!targetPosition) return null;
+  const direct = index.byIdentity.get(`${targetName}:${targetPosition}`);
+  if (direct) return direct;
+  if (targetPosition !== "DST") return null;
+  return index.defensesByTeam.get(normalizePlayerName(boardPlayer.team)) ?? null;
+}
+
+function availabilityFor({
+  sleeperId,
+  transactions,
+  waiverClearDays,
+  now,
+}: {
+  sleeperId: string | null;
+  transactions: SleeperTransaction[];
+  waiverClearDays: number;
+  now: number;
+}): Pick<WaiverRecommendation, "availability" | "availabilityNote"> {
+  if (!sleeperId) {
+    return {
+      availability: "Check Sleeper",
+      availabilityNote: "The FantasyPros player could not be matched safely to a Sleeper player ID.",
+    };
+  }
+  const lastDrop = transactions
+    .filter(
+      (transaction) =>
+        transaction.status === "complete" &&
+        transaction.drops &&
+        Object.hasOwn(transaction.drops, sleeperId),
+    )
+    .sort(
+      (left, right) =>
+        (right.status_updated || right.created) -
+        (left.status_updated || left.created),
+    )[0];
+  if (lastDrop) {
+    const droppedAt = lastDrop.status_updated || lastDrop.created;
+    const clearsAt = droppedAt + waiverClearDays * 24 * 60 * 60 * 1000;
+    if (clearsAt > now) {
+      return {
+        availability: "Waivers",
+        availabilityNote: `Recently dropped; projected to clear ${new Date(clearsAt).toLocaleString()}. Sleeper remains the final authority.`,
+      };
+    }
+  }
+  return {
+    availability: "Free agent",
+    availabilityNote: "No active recent-drop hold was found. Confirm the green add/claim label in Sleeper before submitting.",
+  };
+}
+
+function rosterGuards(team: TeamAnalysis | null) {
+  if (!team) return { safeDrops: [], protectedPlayers: [] };
+  const protectedPlayers = team.players
+    .flatMap((player): WaiverRosterGuard[] => {
+      const reason = automaticProtectionReason(player);
+      return reason ? [{ player, reason }] : [];
+    })
+    .sort((left, right) => (left.player.ecr ?? 9999) - (right.player.ecr ?? 9999));
+  const safeDrops = team.bench
+    .filter((player) => !player.reserve)
+    .filter((player) => !automaticProtectionReason(player))
+    .filter((player) => {
+      const depth = depthFor(team, player.position);
+      return (
+        player.position === "K" ||
+        player.position === "DST" ||
+        !depth ||
+        depth.total > Math.max(1, depth.required)
+      );
     })
     .sort((left, right) => {
-      const leftSamePosition = left.player.position === position ? 8 : 0;
-      const rightSamePosition = right.player.position === position ? 8 : 0;
-      return (
-        dropSafety(right.player, right.depth) + rightSamePosition -
-        (dropSafety(left.player, left.depth) + leftSamePosition)
-      );
-    });
-
-  const selected = candidates[0];
-  if (!selected) return null;
-  const samePosition = selected.player.position === position;
-  const injured = Boolean(selected.player.injuryStatus);
-  return {
-    player: selected.player,
-    reason: injured
-      ? `${selected.player.injuryStatus} lowers the value of this bench spot.`
-      : samePosition
-        ? `This is the lowest-value ${position} on your bench after the upgrade.`
-        : `This is your safest expendable bench spot without opening a starting-lineup hole.`,
-    protected: false,
-  } satisfies DropSuggestion;
+      const leftDepth = depthFor(team, left.position);
+      const rightDepth = depthFor(team, right.position);
+      return dropSafety(right, rightDepth) - dropSafety(left, leftDepth);
+    })
+    .slice(0, 5)
+    .map((player): WaiverRosterGuard => ({
+      player,
+      reason: player.injuryStatus
+        ? `${player.injuryStatus}; reviewable if a meaningful upgrade is available.`
+        : "Bench player with the lowest current combination of role, market value and depth impact.",
+    }));
+  return { safeDrops, protectedPlayers };
 }
 
 function faabFor({
@@ -313,6 +561,7 @@ export function buildWaiverAssistant({
   trendingAdds,
   transactions,
   userRosterId,
+  now = Date.now(),
 }: {
   snapshot: LeagueSnapshot;
   picks: SleeperDraftPick[];
@@ -321,6 +570,7 @@ export function buildWaiverAssistant({
   trendingAdds: SleeperTrendingPlayer[];
   transactions: SleeperTransaction[];
   userRosterId: number;
+  now?: number;
 }): WaiverAssistantResult {
   const roster = snapshot.rosters.find(
     (candidate) => candidate.roster_id === userRosterId,
@@ -331,10 +581,19 @@ export function buildWaiverAssistant({
     Math.max(0, roster?.settings.waiver_budget_used ?? 0),
   );
   const remainingBudget = Math.max(0, totalBudget - spentBudget);
-  const rosterSize = roster?.players?.length ?? 0;
+  const reserveIds = new Set([
+    ...(roster?.reserve ?? []),
+    ...(roster?.taxi ?? []),
+  ].map(String));
+  const activeRosterSize = (roster?.players ?? []).filter(
+    (id) => !reserveIds.has(String(id)),
+  ).length;
+  const regularRosterLimit = snapshot.league.roster_positions.filter(
+    (slot) => !["IR", "RESERVE", "TAXI"].includes(slot.toUpperCase()),
+  ).length;
   const rosterSpotsOpen = Math.max(
     0,
-    snapshot.league.roster_positions.length - rosterSize,
+    regularRosterLimit - activeRosterSize,
   );
   const analyses = analyzeLeagueTeams({
     snapshot,
@@ -347,6 +606,11 @@ export function buildWaiverAssistant({
   const rostered = rosteredIdentities(snapshot, picks, sleeperPlayers);
   const trends = trendingByIdentity(trendingAdds, sleeperPlayers);
   const climate = summarizeWaiverBids(transactions);
+  const sleeperIndex = buildSleeperPlayerIndex(sleeperPlayers);
+  const guards = rosterGuards(team);
+  const before = team
+    ? rosterScore(team.players, snapshot.league.roster_positions)
+    : null;
   const available = board.filter((player) => {
     const position = normalizedPosition(player.position);
     if (!position || player.team === "FA") return false;
@@ -358,16 +622,40 @@ export function buildWaiverAssistant({
   const recommendations = available
     .map((player): WaiverRecommendation | null => {
       const position = normalizedPosition(player.position);
-      if (!position) return null;
+      if (!position || !team || !before) return null;
       const depth = depthFor(team, position);
+      const sleeperMatch = sleeperMatches(player, sleeperIndex);
+      const sleeperId = sleeperMatch?.[0] ?? `waiver:${player.id}`;
       const trendCount =
+        (sleeperMatch ? trends.byId.get(sleeperMatch[0]) : undefined) ??
         trends.byName.get(normalizePlayerName(player.name)) ??
         0;
-      const drop = chooseDrop(team, position, rosterSpotsOpen);
-      const replacementValue = drop ? playerValue(drop.player) : 0;
-      const rosterGain = Math.round(
-        (playerValue(player) - replacementValue) * 10,
-      ) / 10;
+      const candidate = candidateTeamPlayer(player, sleeperId);
+      const dropCandidates: Array<TeamPlayer | null> =
+        rosterSpotsOpen > 0
+          ? [null]
+          : team.players.filter((candidate) => !candidate.reserve);
+      const impacts = dropCandidates.flatMap((drop): PairImpact[] => {
+        const impact = testAddDropPair({
+          team,
+          candidate,
+          drop,
+          rosterPositions: snapshot.league.roster_positions,
+          before,
+        });
+        return impact ? [impact] : [];
+      });
+      const bestImpact = impacts.sort(
+        (left, right) =>
+          right.rosterGain - left.rosterGain ||
+          right.starterGain - left.starterGain ||
+          right.benchGain - left.benchGain,
+      )[0] ?? null;
+      const drop = bestImpact?.drop ?? null;
+      const rosterGain = bestImpact?.rosterGain ?? 0;
+      const starterGain = bestImpact?.starterGain ?? 0;
+      const projectionGain = bestImpact?.projectionGain ?? null;
+      const benchGain = bestImpact?.benchGain ?? 0;
       const scarcity =
         position === "RB" || position === "WR"
           ? 7
@@ -398,13 +686,36 @@ export function buildWaiverAssistant({
         remainingBudget,
         climate,
       });
+      const availability = availabilityFor({
+        sleeperId: sleeperMatch?.[0] ?? null,
+        transactions,
+        waiverClearDays: Math.max(
+          1,
+          snapshot.league.settings.waiver_clear_days ?? 2,
+        ),
+        now,
+      });
+      const isClearUpgrade = Boolean(bestImpact) && rosterGain >= 2.5 && score >= 55;
+      const isStrongUpgrade = rosterGain >= 5 && score >= 68;
+      const actionVerdict: WaiverActionVerdict = !isClearUpgrade
+        ? "Hold"
+        : availability.availability === "Waivers"
+          ? isStrongUpgrade ? "Claim now" : "Consider"
+          : availability.availability === "Free agent"
+            ? isStrongUpgrade ? "Add now" : "Consider"
+            : "Consider";
       const reasons = [
         depth
           ? `${position} depth is ${depth.label.toLowerCase()} (${depth.grade}/100).`
           : `${position} is being evaluated as an upside bench addition.`,
         rosterGain > 0
-          ? `Estimated roster-value gain: +${rosterGain.toFixed(1)} over the suggested drop.`
+          ? `Full add/drop simulation improves roster value by +${rosterGain.toFixed(1)}.`
           : `This is a watch-list move; it does not clearly improve the current roster yet.`,
+        starterGain > 0
+          ? `The rebuilt optimal lineup gains +${starterGain.toFixed(1)} starter-value points.`
+          : benchGain > 0
+            ? `The move adds +${benchGain.toFixed(1)} in weighted bench value without weakening the lineup.`
+            : `The optimized lineup and bench do not gain enough to justify a move.`,
         trendCount > 0
           ? `${trendCount.toLocaleString()} Sleeper adds in the last 24 hours signal competition.`
           : `No meaningful 24-hour Sleeper add surge is available.`,
@@ -412,16 +723,18 @@ export function buildWaiverAssistant({
       const warning =
         injuryPenalty(player) >= 24
           ? `${player.injuryStatus || player.injuryDetail} materially lowers the bid.`
-          : !drop && rosterSpotsOpen === 0
+            : !bestImpact && rosterSpotsOpen === 0
             ? "No safe drop was found. Do not submit this claim without reviewing your roster."
+            : !isClearUpgrade
+              ? "No meaningful roster improvement was found. Hold your current player."
             : null;
       return {
         player,
         position,
         priority:
-          score >= 75 && rosterGain > 0
+          isStrongUpgrade
             ? "Priority add"
-            : score >= 58 && rosterGain > 0
+            : isClearUpgrade
               ? "Upgrade"
               : "Watch",
         score,
@@ -433,6 +746,24 @@ export function buildWaiverAssistant({
         confidence: confidenceFor(player, trendCount),
         reasons,
         warning,
+        ...availability,
+        actionVerdict,
+        actionLabel:
+          actionVerdict === "Claim now"
+            ? `Claim ${player.name}${drop ? ` · Drop ${drop.player.name}` : ""}`
+            : actionVerdict === "Add now"
+              ? `Add ${player.name}${drop ? ` · Drop ${drop.player.name}` : ""}`
+              : actionVerdict === "Consider"
+                ? `Consider ${player.name}${drop ? ` for ${drop.player.name}` : ""}`
+                : `Keep your roster over ${player.name}`,
+        starterGain,
+        projectionGain,
+        benchGain,
+        moveType: !bestImpact
+          ? "no-safe-drop"
+          : drop
+            ? "swap"
+            : "add-only",
       };
     })
     .filter((item): item is WaiverRecommendation => Boolean(item))
@@ -442,6 +773,14 @@ export function buildWaiverAssistant({
         (left.player.ecr ?? 9999) - (right.player.ecr ?? 9999),
     )
     .slice(0, 60);
+
+  const actionable = recommendations.filter((item) => item.priority !== "Watch");
+  const claimOrder = actionable
+    .filter((item) => item.availability !== "Free agent")
+    .slice(0, 5);
+  const freeAgentAdds = actionable
+    .filter((item) => item.availability === "Free agent")
+    .slice(0, 5);
 
   return {
     recommendations,
@@ -453,5 +792,14 @@ export function buildWaiverAssistant({
     waiverPosition: roster?.settings.waiver_position ?? 0,
     bidClimate: climate,
     team,
+    upgradeCount: actionable.length,
+    claimOrder,
+    freeAgentAdds,
+    ...guards,
+    noUpgradeReason: actionable.length
+      ? null
+      : available.length
+        ? "Every available player was tested against every safe roster cut, and none produced a meaningful improvement."
+        : "No ranked unrostered players were available to evaluate.",
   };
 }
