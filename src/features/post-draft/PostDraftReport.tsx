@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import {
+  Activity,
   AlertTriangle,
   ArrowDown,
   ArrowRight,
@@ -10,6 +11,7 @@ import {
   CircleAlert,
   ClipboardCheck,
   Crosshair,
+  Database,
   Dumbbell,
   Gauge,
   HeartPulse,
@@ -31,6 +33,14 @@ import type { useWarRoom } from "../player-intelligence/useWarRoom";
 import type { DraftSelectionReview, ReportGrade } from "./engine";
 import { buildPostDraftReport } from "./engine";
 import { useDraftControls } from "../live-draft/useDraftControls";
+import {
+  buildPostDraftDataHealth,
+  type PostDraftDataHealth,
+} from "./dataHealth";
+import {
+  buildPostDraftPriorities,
+  type PostDraftDestination,
+} from "./commandCenter";
 
 type WarRoomState = ReturnType<typeof useWarRoom>;
 type DraftPickState = ReturnType<typeof useDraftPicks>;
@@ -41,6 +51,52 @@ function formatNumber(value: number | null, digits = 0) {
 
 function gradeTone(score: number) {
   return score >= 80 ? "strong" : score >= 65 ? "middle" : "weak";
+}
+
+function healthTime(timestamp: number | null) {
+  if (!timestamp) return "No successful update";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(timestamp);
+}
+
+function DataHealthPanel({ health }: { health: PostDraftDataHealth }) {
+  return (
+    <section className={`post-data-health is-${health.status}`}>
+      <header>
+        <Database />
+        <span>
+          <h2>Data health</h2>
+          <p>{health.headline}</p>
+        </span>
+        <strong>{health.status}</strong>
+      </header>
+      <div className="post-data-health-grid">
+        {health.items.map((item) => (
+          <article key={item.id} className={`is-${item.status}`}>
+            <span><small>{item.label}</small><strong>{item.status}</strong></span>
+            <time dateTime={item.fetchedAt ? new Date(item.fetchedAt).toISOString() : undefined}>
+              {healthTime(item.fetchedAt)}
+            </time>
+            <p>{item.detail}</p>
+          </article>
+        ))}
+      </div>
+      <footer>
+        <span><small>Supported rules</small><strong>{health.coverage.supported}</strong></span>
+        <span><small>Partial rules</small><strong>{health.coverage.partial}</strong></span>
+        <span><small>Unsupported rules</small><strong>{health.coverage.unsupported}</strong></span>
+        <p>
+          {health.coverage.available
+            ? "Projection coverage is measured against every active non-zero scoring rule."
+            : "Projection coverage is unavailable; rankings remain usable, but scoring-specific confidence is limited."}
+        </p>
+      </footer>
+    </section>
+  );
 }
 
 function GradeCard({
@@ -158,12 +214,14 @@ export function PostDraftReport({
   warRoom,
   refreshing,
   onRefresh,
+  onOpenView,
 }: {
   snapshot: LeagueSnapshot;
   draftPicks: DraftPickState;
   warRoom: WarRoomState;
   refreshing: boolean;
   onRefresh: () => void;
+  onOpenView: (view: PostDraftDestination) => void;
 }) {
   const userRoster = getUserRoster(snapshot);
   const { controls } = useDraftControls();
@@ -204,6 +262,28 @@ export function PostDraftReport({
   const loading =
     warRoom.isUnlocked &&
     (warRoom.loadingData || sleeperPlayers.loading || draftPicks.loading);
+  const dataHealth = useMemo(
+    () => buildPostDraftDataHealth({
+      snapshotFetchedAt: snapshot.fetchedAt,
+      picksFetchedAt: draftPicks.fetchedAt,
+      picksError: draftPicks.error,
+      board: warRoom.board,
+      weeklyBoard: warRoom.weeklyBoard,
+      dataError: warRoom.dataError,
+    }),
+    [
+      draftPicks.error,
+      draftPicks.fetchedAt,
+      snapshot.fetchedAt,
+      warRoom.board,
+      warRoom.dataError,
+      warRoom.weeklyBoard,
+    ],
+  );
+  const priorities = useMemo(
+    () => report ? buildPostDraftPriorities(report, dataHealth.status) : [],
+    [dataHealth.status, report],
+  );
 
   return (
     <main className="post-draft-report">
@@ -285,6 +365,32 @@ export function PostDraftReport({
               </small>
             </div>
           </section>
+
+          <section className="post-command-center">
+            <header>
+              <Activity />
+              <span>
+                <h2>Your next four moves</h2>
+                <p>One prioritized path from the draft grade into Week 1 roster management.</p>
+              </span>
+            </header>
+            <div>
+              {priorities.map((priority) => (
+                <article key={priority.id} className={priority.urgent ? "is-urgent" : ""}>
+                  <b>{priority.rank}</b>
+                  <span>
+                    <strong>{priority.title}</strong>
+                    <small>{priority.detail}</small>
+                  </span>
+                  <button type="button" onClick={() => onOpenView(priority.destination)}>
+                    {priority.action} <ArrowRight />
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <DataHealthPanel health={dataHealth} />
 
           <section className="post-report-section">
             <header>
